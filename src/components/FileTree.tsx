@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { FileNode } from '../types';
 import { 
   ChevronRight, 
@@ -12,7 +12,12 @@ import {
   FolderPlus,
   AlertTriangle,
   FolderMinus,
-  X
+  X,
+  Download,
+  RefreshCw,
+  Upload,
+  FileUp,
+  FolderUp
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -40,6 +45,161 @@ export function FileTree({
   const [inputVal, setInputVal] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [isZipping, setIsZipping] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const fileUploadInputRef = useRef<HTMLInputElement>(null);
+  const folderUploadInputRef = useRef<HTMLInputElement>(null);
+
+  const uploadSingleFile = (file: File, targetPath: string): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        try {
+          const result = reader.result as string;
+          const base64 = result.split(',')[1];
+          
+          const response = await fetch('/api/fs/write', {
+            method: 'POST',
+            alignContent: 'application/json',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              path: targetPath,
+              content: base64,
+              workspaceId,
+              encoding: 'base64'
+            }),
+          } as any);
+
+          if (!response.ok) {
+            const errData = await response.json();
+            throw new Error(errData.error || `HTTP error ${response.status}`);
+          }
+          resolve();
+        } catch (err) {
+          reject(err);
+        }
+      };
+      reader.onerror = () => reject(new Error(`فشل قراءة الملف ${file.name}`));
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleFilesUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    setIsImporting(true);
+    setErrorMsg('');
+    try {
+      for (const file of Array.from(files)) {
+        await uploadSingleFile(file, file.name);
+      }
+      onRefresh();
+    } catch (err: any) {
+      console.error('File upload failed:', err);
+      setErrorMsg(`فشل رفع الملفات: ${err.message}`);
+    } finally {
+      setIsImporting(false);
+      if (e.target) e.target.value = '';
+    }
+  };
+
+  const handleFolderUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    setIsImporting(true);
+    setErrorMsg('');
+    try {
+      for (const file of Array.from(files)) {
+        // webkitRelativePath contains the full relative path, e.g. "my-folder/sub/file.txt"
+        const filePath = file.webkitRelativePath || file.name;
+        await uploadSingleFile(file, filePath);
+      }
+      onRefresh();
+    } catch (err: any) {
+      console.error('Folder upload failed:', err);
+      setErrorMsg(`فشل رفع المجلد: ${err.message}`);
+    } finally {
+      setIsImporting(false);
+      if (e.target) e.target.value = '';
+    }
+  };
+
+  const triggerFileUploadInput = () => {
+    fileUploadInputRef.current?.click();
+  };
+
+  const triggerFolderUploadInput = () => {
+    folderUploadInputRef.current?.click();
+  };
+
+  const handleDownloadZip = async () => {
+    if (isZipping) return;
+    setIsZipping(true);
+    try {
+      const link = document.createElement('a');
+      link.href = `/api/workspace/export-zip?workspaceId=${encodeURIComponent(workspaceId)}`;
+      link.setAttribute('download', `workspace-${workspaceId}.zip`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err: any) {
+      console.error('Failed to export zip:', err);
+    } finally {
+      setIsZipping(false);
+    }
+  };
+
+  const handleImportZip = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsImporting(true);
+    setErrorMsg('');
+
+    try {
+      const reader = new FileReader();
+      
+      const fileDataPromise = new Promise<string>((resolve, reject) => {
+        reader.onload = () => {
+          const result = reader.result as string;
+          const base64 = result.split(',')[1];
+          resolve(base64);
+        };
+        reader.onerror = () => reject(new Error('Failed to read the ZIP file.'));
+        reader.readAsDataURL(file);
+      });
+
+      const zipBase64 = await fileDataPromise;
+
+      const response = await fetch('/api/workspace/import-zip', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspaceId, zipBase64 }),
+      });
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || `HTTP error ${response.status}`);
+      }
+
+      onRefresh();
+      if (e.target) {
+        e.target.value = '';
+      }
+    } catch (err: any) {
+      console.error('Import ZIP failed:', err);
+      setErrorMsg(`فشل استيراد مشروع الـ ZIP: ${err.message}`);
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  const triggerFileInput = () => {
+    fileInputRef.current?.click();
+  };
 
   // Init modal helper
   const openModal = (action: 'newFile' | 'newDir' | 'rename' | 'delete' | 'deleteProject', target = '') => {
@@ -149,35 +309,127 @@ export function FileTree({
   return (
     <div className="relative h-full flex flex-col text-sm font-mono select-none min-w-[200px] bg-[#0c0c0e]">
       {/* File Tree Header Actions */}
-      <div className="flex items-center gap-1.5 px-3 py-2 border-b border-white/5 shrink-0 bg-[#0e0e11]">
-        <button 
-          onClick={() => openModal('newFile')} 
-          className="p-1.5 text-slate-400 hover:text-emerald-400 hover:bg-white/5 rounded transition-all flex items-center justify-center gap-1"
-          title="ملف جديد"
-        >
-          <FilePlus className="w-4 h-4" />
-          <span className="text-[10px] sm:hidden font-sans">ملف</span>
-        </button>
-        <button 
-          onClick={() => openModal('newDir')} 
-          className="p-1.5 text-slate-400 hover:text-emerald-400 hover:bg-white/5 rounded transition-all flex items-center justify-center gap-1"
-          title="مجلد جديد"
-        >
-          <FolderPlus className="w-4 h-4" />
-          <span className="text-[10px] sm:hidden font-sans">مجلد</span>
-        </button>
+      <div className="flex flex-col gap-1.5 p-2 bg-[#0e0e11] border-b border-white/5 shrink-0 animate-fade-in">
+        {/* Row 1: Interactive creation & workspace resets */}
+        <div className="flex items-center justify-between gap-1 w-full">
+          <div className="flex items-center gap-1">
+            <button 
+              onClick={() => openModal('newFile')} 
+              className="p-1 px-1.5 text-slate-300 hover:text-emerald-400 hover:bg-white/5 rounded border border-white/5 transition-all flex items-center justify-center gap-1"
+              title="ملف فارغ جديد"
+            >
+              <FilePlus className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              <span className="text-[10px] font-sans font-medium">ملف جديد</span>
+            </button>
+            <button 
+              onClick={() => openModal('newDir')} 
+              className="p-1 px-1.5 text-slate-300 hover:text-emerald-400 hover:bg-white/5 rounded border border-white/5 transition-all flex items-center justify-center gap-1"
+              title="مجلد فارغ جديد"
+            >
+              <FolderPlus className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              <span className="text-[10px] font-sans font-medium">مجلد جديد</span>
+            </button>
+          </div>
 
-        <span className="h-4 w-[1px] bg-white/10 mx-1" />
+          <button 
+            type="button"
+            onClick={() => openModal('deleteProject')} 
+            className="p-1 px-1.5 text-rose-500 hover:text-rose-400 hover:bg-rose-500/10 rounded border border-rose-500/10 transition-all flex items-center justify-center gap-1 text-[10px] font-sans"
+            title="حذف المشروع وإعادة التهيئة"
+          >
+            <FolderMinus className="w-3.5 h-3.5 shrink-0" />
+            <span>حذف</span>
+          </button>
+        </div>
 
-        <button 
-          onClick={() => openModal('deleteProject')} 
-          className="p-1.5 text-rose-500/80 hover:text-rose-400 hover:bg-rose-500/10 rounded transition-all ml-auto flex items-center justify-center gap-1"
-          title="حذف المشروع وإعادة التهيئة"
-        >
-          <FolderMinus className="w-4 h-4" />
-          <span className="text-[10px] font-sans font-medium text-rose-400/90">حذف المشروع</span>
-        </button>
+        {/* Row 2: File/Folder Import & ZIP Sync */}
+        <div className="flex items-center justify-between gap-1 pt-1 border-t border-white/5 w-full">
+          <div className="flex items-center gap-1">
+            <button 
+              type="button"
+              onClick={triggerFileUploadInput} 
+              disabled={isImporting}
+              className="p-1 px-1.5 text-slate-400 hover:text-emerald-400 hover:bg-white/5 rounded border border-white/5 transition-all flex items-center justify-center gap-1 disabled:opacity-50 text-[10px] font-sans"
+              title="رفع ملفات مستقلة من جهازك"
+            >
+              <FileUp className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              <span>رفع ملفات</span>
+            </button>
+
+            <button 
+              type="button"
+              onClick={triggerFolderUploadInput} 
+              disabled={isImporting}
+              className="p-1 px-1.5 text-slate-400 hover:text-emerald-400 hover:bg-white/5 rounded border border-white/5 transition-all flex items-center justify-center gap-1 disabled:opacity-50 text-[10px] font-sans"
+              title="رفع مجلد كامل بجميع تفرعاته"
+            >
+              <FolderUp className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              <span>رفع مجلد</span>
+            </button>
+          </div>
+
+          <div className="flex items-center gap-1">
+            <button 
+              type="button"
+              onClick={triggerFileInput} 
+              disabled={isImporting}
+              className="p-1 text-slate-400 hover:text-emerald-400 hover:bg-white/5 rounded transition-all flex items-center justify-center gap-1 disabled:opacity-50 text-[10px] font-sans"
+              title="استيراد مشروع ZIP من جهازك"
+            >
+              {isImporting ? <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-400" /> : <Upload className="w-3.5 h-3.5" />}
+              <span>استيراد ZIP</span>
+            </button>
+
+            <button 
+              type="button"
+              onClick={handleDownloadZip} 
+              disabled={isZipping}
+              className="p-1 text-slate-400 hover:text-emerald-400 hover:bg-white/5 rounded transition-all flex items-center justify-center gap-1 disabled:opacity-50 text-[10px] font-sans"
+              title="تصدير المشروع كملف مضغوط ZIP"
+            >
+              {isZipping ? <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-400" /> : <Download className="w-3.5 h-3.5" />}
+              <span>تصدير ZIP</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Hidden native input pickers for absolute local import integrity */}
+        <input 
+          type="file" 
+          ref={fileInputRef} 
+          onChange={handleImportZip} 
+          accept=".zip" 
+          className="hidden" 
+        />
+        <input 
+          type="file" 
+          ref={fileUploadInputRef} 
+          onChange={handleFilesUpload} 
+          multiple 
+          className="hidden" 
+        />
+        <input 
+          type="file" 
+          ref={folderUploadInputRef} 
+          onChange={handleFolderUpload} 
+          {...{ webkitdirectory: "", directory: "" } as any}
+          multiple 
+          className="hidden" 
+        />
       </div>
+
+      {errorMsg && !activeModal && (
+        <div className="mx-3 mt-2 p-2 bg-rose-500/10 border border-rose-500/20 rounded-lg text-[11px] text-rose-400 font-sans flex items-center justify-between gap-2">
+          <span className="truncate">{errorMsg}</span>
+          <button 
+            type="button"
+            onClick={() => setErrorMsg('')} 
+            className="text-rose-400 hover:text-white font-bold px-1 text-sm shrink-0"
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       {/* File Tree List */}
       <div className="flex-1 overflow-y-auto px-1 py-1.5 min-h-0">

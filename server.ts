@@ -9,6 +9,7 @@ import path from 'path';
 import * as cheerio from 'cheerio';
 import { WebSocketServer, WebSocket } from 'ws';
 import http from 'http';
+import AdmZip from 'adm-zip';
 
 const execAsync = promisify(exec);
 
@@ -629,10 +630,14 @@ app.post('/api/fs/read', async (req, res) => {
 
 app.post('/api/fs/write', async (req, res) => {
   try {
-    const { path: filePath, content, workspaceId } = req.body;
+    const { path: filePath, content, workspaceId, encoding } = req.body;
     const { resolved } = await safePath(workspaceId, filePath);
     await fs.mkdir(path.dirname(resolved), { recursive: true });
-    await fs.writeFile(resolved, content, 'utf8');
+    if (encoding === 'base64') {
+      await fs.writeFile(resolved, Buffer.from(content, 'base64'));
+    } else {
+      await fs.writeFile(resolved, content, 'utf8');
+    }
     res.json({ success: true });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -698,6 +703,139 @@ app.post('/api/workspace/delete', async (req, res) => {
     await fs.mkdir(dir, { recursive: true });
     res.json({ success: true });
   } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/workspace/export-zip', async (req, res) => {
+  try {
+    const { workspaceId } = req.query;
+    if (!workspaceId || typeof workspaceId !== 'string') {
+      return res.status(400).json({ error: 'workspaceId query parameter is required' });
+    }
+    const { wDir } = await safePath(workspaceId, '.');
+
+    const zip = new AdmZip();
+
+    async function addFolderToZip(currentPath: string, relativePath: string = '') {
+      const entries = await fs.readdir(currentPath, { withFileTypes: true });
+      for (const entry of entries) {
+        const name = entry.name;
+        if (
+          name === 'node_modules' || 
+          name === '.git' || 
+          name === 'dist' || 
+          name === '.agent_workspace' || 
+          name === '.chromium-profile' ||
+          name === '.parcel-cache' ||
+          name === '.next' ||
+          name === '.nuxt' ||
+          name === '.cache' ||
+          name.startsWith('.')
+        ) {
+          continue;
+        }
+        const fullPath = path.join(currentPath, name);
+        const zipPath = relativePath ? `${relativePath}/${name}` : name;
+        if (entry.isDirectory()) {
+          zip.addFile(zipPath + '/', Buffer.alloc(0));
+          await addFolderToZip(fullPath, zipPath);
+        } else {
+          const content = await fs.readFile(fullPath);
+          zip.addFile(zipPath, content);
+        }
+      }
+    }
+
+    await addFolderToZip(wDir);
+
+    const zipBuffer = zip.toBuffer();
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="workspace-${workspaceId}.zip"`);
+    res.setHeader('Content-Length', zipBuffer.length);
+    res.send(zipBuffer);
+  } catch (error: any) {
+    console.error('Error exporting ZIP:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/workspace/import-zip', async (req, res) => {
+  try {
+    const { workspaceId, zipBase64 } = req.body;
+    if (!workspaceId) {
+      return res.status(400).json({ error: 'workspaceId is required' });
+    }
+    if (!zipBase64) {
+      return res.status(400).json({ error: 'zipBase64 is required' });
+    }
+
+    const { wDir } = await safePath(workspaceId, '.');
+
+    // Decode zip
+    const zipBuffer = Buffer.from(zipBase64, 'base64');
+    const zip = new AdmZip(zipBuffer);
+    const zipEntries = zip.getEntries();
+
+    // Clean current workspace dir except node_modules and .git
+    const existingEntries = await fs.readdir(wDir, { withFileTypes: true });
+    for (const entry of existingEntries) {
+      const name = entry.name;
+      if (name === 'node_modules' || name === '.git') continue;
+      const fullPath = path.join(wDir, name);
+      try {
+        await fs.rm(fullPath, { recursive: true, force: true });
+      } catch (rmError) {
+        console.warn(`Could not delete file ${fullPath}:`, rmError);
+      }
+    }
+
+    // Detect if there is a common top-level wrapping folder (like github downloads: repo-main/)
+    let commonPrefix = '';
+    const activeEntries = zipEntries.filter(entry => {
+      const name = entry.entryName;
+      return !name.startsWith('__MACOSX') && !name.includes('.DS_Store');
+    });
+
+    if (activeEntries.length > 0) {
+      const firstParts = activeEntries[0].entryName.split('/');
+      if (firstParts.length > 1 && firstParts[0]) {
+        const candidate = firstParts[0] + '/';
+        const isCommon = activeEntries.every(entry => entry.entryName.startsWith(candidate));
+        if (isCommon) {
+          commonPrefix = candidate;
+        }
+      }
+    }
+
+    // Extract entries perfectly
+    for (const entry of zipEntries) {
+      const name = entry.entryName;
+      // Skip Mac junk
+      if (name.startsWith('__MACOSX') || name.includes('.DS_Store')) {
+        continue;
+      }
+
+      let relativePath = name;
+      if (commonPrefix && name.startsWith(commonPrefix)) {
+        relativePath = name.slice(commonPrefix.length);
+      }
+
+      if (!relativePath) continue; // Root directory itself
+
+      const targetFullPath = path.join(wDir, relativePath);
+
+      if (entry.isDirectory) {
+        await fs.mkdir(targetFullPath, { recursive: true });
+      } else {
+        await fs.mkdir(path.dirname(targetFullPath), { recursive: true });
+        await fs.writeFile(targetFullPath, entry.getData());
+      }
+    }
+
+    res.json({ success: true, message: 'Project imported successfully' });
+  } catch (error: any) {
+    console.error('Error importing ZIP:', error);
     res.status(500).json({ error: error.message });
   }
 });

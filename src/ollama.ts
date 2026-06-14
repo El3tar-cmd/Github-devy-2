@@ -5,11 +5,27 @@ export const TOOLS_SCHEMA = [
     type: "function",
     function: {
       name: "read_file",
-      description: "Read the contents of a file",
+      description: "Read the entire contents of a file",
       parameters: {
         type: "object",
         properties: { path: { type: "string" } },
         required: ["path"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "read_file_lines",
+      description: "Read specific line ranges of a file. Use this for reading sections of large files.",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string" },
+          startLine: { type: "number", description: "The 1-based start line number (inclusive)" },
+          endLine: { type: "number", description: "The 1-based end line number (inclusive)" }
+        },
+        required: ["path", "startLine", "endLine"],
       },
     },
   },
@@ -303,6 +319,8 @@ export async function executeToolCall(
   switch (name) {
     case "read_file":
       return await req("/api/fs/read", args);
+    case "read_file_lines":
+      return await req("/api/fs/read-lines", args);
     case "write_file":
       return await req("/api/fs/write", args);
     case "replace_in_file":

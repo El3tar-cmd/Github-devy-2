@@ -1,0 +1,120 @@
+import React, { useState, useEffect, useRef } from "react";
+import { Terminal, Loader2, ClipboardList, Send, Square } from "lucide-react";
+import { useAgentContext } from "../../contexts/AgentContext";
+import { ChatMessageUI } from "../ChatMessageUI";
+
+interface ChatLayoutProps {
+  activeTab: "chat" | "ide";
+}
+
+export const ChatLayout: React.FC<ChatLayoutProps> = ({ activeTab }) => {
+  const {
+    messages,
+    sendMessage,
+    isRunning,
+    settings,
+    abortAgent,
+  } = useAgentContext();
+
+  const [inputStr, setInputStr] = useState("");
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, isRunning]);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isRunning) {
+      abortAgent();
+      return;
+    }
+    if (!inputStr.trim()) return;
+    sendMessage(inputStr.trim());
+    setInputStr("");
+  };
+
+  return (
+    <div
+      className={`flex-1 min-w-0 w-full flex flex-col relative h-full ${
+        activeTab === "chat" ? "flex" : "hidden lg:flex"
+      } lg:border-r border-white/5 bg-[#0b0b0e]`}
+    >
+      <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-6 scroll-smooth will-change-scroll pb-32">
+        <div className="max-w-3xl mx-auto space-y-6">
+          {messages.length === 0 && (
+            <div className="h-64 flex flex-col items-center justify-center text-slate-500 space-y-4">
+              <Terminal className="w-12 h-12 text-slate-700/50" />
+              <p className="text-sm">Connect a repo and start tasking the agent.</p>
+            </div>
+          )}
+          {messages.map((m) => (
+            <ChatMessageUI key={m.id} msg={m} />
+          ))}
+          {isRunning && (
+            <div className="flex items-center gap-3 text-emerald-500 text-sm font-mono p-4 bg-emerald-500/5 rounded-xl border border-emerald-500/10 w-fit">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Agent is processing...
+            </div>
+          )}
+          <div ref={messagesEndRef} />
+        </div>
+      </div>
+
+      {/* Input Form */}
+      <div className="absolute bottom-6 left-0 right-0 max-w-3xl mx-auto px-4 md:px-6">
+        {!isRunning && (
+          <div className="flex gap-2 mb-2 justify-end">
+            <button
+              type="button"
+              onClick={() => {
+                setInputStr(
+                  "Please act as a tech lead and construct a detailed plan in 'plan.md' for this project. If 'plan.md' already exists, read its contents first, then update it reflecting what is completed and what remains. Make sure to use markdown task lists (- [ ] and - [x])."
+                );
+              }}
+              className="text-[11px] font-medium bg-[#2a2a32]/80 hover:bg-[#3b3b46] text-emerald-400 px-3 py-1.5 rounded-lg border border-white/5 transition-colors flex items-center gap-1.5 shadow-sm backdrop-blur-sm"
+            >
+              <ClipboardList className="w-3.5 h-3.5" /> Generate / Update Plan
+            </button>
+          </div>
+        )}
+        <form
+          onSubmit={handleSubmit}
+          className="relative flex items-center bg-[#1e1e24] border border-white/10 rounded-2xl shadow-[0_10px_40px_rgba(0,0,0,0.5)] overflow-hidden transition-all focus-within:ring-2 focus-within:ring-emerald-500/50 focus-within:border-emerald-500/30"
+        >
+          <input
+            value={inputStr}
+            onChange={(e) => setInputStr(e.target.value)}
+            disabled={
+              isRunning ||
+              (settings.apiProvider === "ollama" ? !settings.ollamaModel : !settings.geminiApiKey)
+            }
+            placeholder={
+              isRunning ? "Agent is working..." : "Ask the agent to modify code..."
+            }
+            className="flex-1 bg-transparent py-4 pl-6 pr-14 text-white outline-none placeholder-slate-500 disabled:opacity-50 text-sm leading-relaxed"
+          />
+          <button
+            type="submit"
+            disabled={
+              (!inputStr.trim() && !isRunning) ||
+              (settings.apiProvider === "ollama" ? !settings.ollamaModel : !settings.geminiApiKey)
+            }
+            className={`absolute right-3 p-2 rounded-xl transition-all ${
+              isRunning
+                ? "bg-rose-500 hover:bg-rose-600 text-white shadow-[0_0_15px_rgba(244,63,94,0.4)]"
+                : "bg-emerald-500 hover:bg-emerald-400 text-black disabled:opacity-30 disabled:hover:bg-emerald-500"
+            }`}
+            title={isRunning ? "Stop Agent" : "Send Message"}
+          >
+            {isRunning ? (
+              <Square className="w-4 h-4 fill-current" />
+            ) : (
+              <Send className="w-4 h-4" />
+            )}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+};

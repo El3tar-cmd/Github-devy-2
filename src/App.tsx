@@ -23,6 +23,8 @@ import { initializeRepo } from "./ollama";
 import { SearchUI } from "./components/SearchUI";
 import { TerminalUI } from "./components/TerminalUI";
 import { BrowserPreview } from "./components/BrowserPreview";
+import { GitUI } from "./components/GitUI";
+import { PortManager } from "./components/PortManager";
 
 export default function App() {
   const [settings, setSettings] = useState<Settings>(() => {
@@ -74,6 +76,8 @@ export default function App() {
   const [initLoading, setInitLoading] = useState(false);
   const [initSuccess, setInitSuccess] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const editorRef = useRef<any>(null);
+  const [targetLine, setTargetLine] = useState<number | null>(null);
 
   const [workspaceId, setWorkspaceId] = useState<string>(() => {
     if (typeof window !== "undefined") {
@@ -138,7 +142,7 @@ export default function App() {
 
   const [activeTab, setActiveTab] = useState<"chat" | "ide">("chat");
   const [ideTab, setIdeTab] = useState<
-    "editor" | "browser" | "terminal" | "search"
+    "editor" | "browser" | "terminal" | "search" | "git"
   >("editor");
   const [isDiffMode, setIsDiffMode] = useState(false);
   const {
@@ -153,6 +157,23 @@ export default function App() {
     saveFile,
     isWorkspaceReady,
   } = useWorkspace(workspaceId);
+
+  // Navigate editor to a specific line after file opens
+  useEffect(() => {
+    if (targetLine && editorRef.current && selectedFile) {
+      const editor = editorRef.current;
+      setTimeout(() => {
+        try {
+          editor.revealLineInCenter(targetLine);
+          editor.setPosition({ lineNumber: targetLine, column: 1 });
+          editor.focus();
+        } catch (e) {
+          console.error("Monaco scroll failed:", e);
+        }
+        setTargetLine(null);
+      }, 150);
+    }
+  }, [targetLine, selectedFile]);
 
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "unsaved">("saved");
 
@@ -273,6 +294,15 @@ export default function App() {
               ✔ Workspace Ready
             </div>
           )}
+
+          <PortManager
+            workspaceId={workspaceId}
+            onOpenPreview={(port) => {
+              localStorage.setItem('browser_preview_url', `/proxy/${port}/`);
+              localStorage.setItem('browser_preview_input_url', `http://localhost:${port}`);
+              setIdeTab("browser");
+            }}
+          />
 
           <div className="mt-10 flex-1">
             <div className="flex items-center justify-between mb-4">
@@ -497,6 +527,12 @@ export default function App() {
                 >
                   Search
                 </button>
+                <button
+                  onClick={() => setIdeTab("git")}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${ideTab === "git" ? "bg-[#2a2a32] text-emerald-400 shadow-sm" : "text-slate-400 hover:text-slate-200 hover:bg-white/5"}`}
+                >
+                  Git
+                </button>
               </div>
               {ideTab === "editor" && selectedFile && (
                 <div className="flex items-center gap-2 shrink-0">
@@ -534,87 +570,117 @@ export default function App() {
               )}
             </div>
             <div className="flex-1 flex overflow-hidden">
-              {ideTab === "editor" ? (
-                <>
-                  <div className="w-56 overflow-y-auto border-r border-white/5 bg-[#0e0e11] shrink-0">
-                    <FileTree
-                      tree={tree}
-                      selectedPath={selectedFile}
-                      onSelect={(p) => {
-                        openFile(p);
-                      }}
-                      workspaceId={workspaceId}
-                      onRefresh={fetchTree}
-                      onDeleteWorkspace={() => {
-                        setSelectedFile(null);
-                        setFileContent("");
-                      }}
-                    />
-                  </div>
-                  <div className="flex-1 flex flex-col min-w-0 bg-[#0e0e11]">
-                    {selectedFile ? (
-                      isDiffMode ? (
-                        <DiffEditor
-                          height="100%"
-                          theme="vs-dark"
-                          original={originalContent}
-                          modified={fileContent}
-                          language={
-                            selectedFile.split(".").pop() || "plaintext"
-                          }
-                          options={{
-                            minimap: { enabled: false },
-                            readOnly: false,
-                            fontSize: 13,
-                            fontFamily: "'JetBrains Mono', monospace",
-                          }}
-                          onMount={(editor) => {
-                            editor
-                              .getModifiedEditor()
-                              .onDidChangeModelContent(() => {
-                                setFileContent(
-                                  editor.getModifiedEditor().getValue(),
-                                );
-                              });
-                          }}
-                        />
-                      ) : (
-                        <Editor
-                          height="100%"
-                          theme="vs-dark"
-                          value={fileContent}
-                          language={
-                            selectedFile.split(".").pop() || "plaintext"
-                          }
-                          options={{
-                            minimap: { enabled: false },
-                            fontSize: 13,
-                            fontFamily: "'JetBrains Mono', monospace",
-                            wordWrap: "on",
-                          }}
-                          onChange={(v) => setFileContent(v || "")}
-                        />
-                      )
+              {/* Editor Tab */}
+              <div className={`flex-1 flex overflow-hidden ${ideTab === "editor" ? "" : "hidden"}`}>
+                <div className="w-56 overflow-y-auto border-r border-white/5 bg-[#0e0e11] shrink-0">
+                  <FileTree
+                    tree={tree}
+                    selectedPath={selectedFile}
+                    onSelect={(p) => {
+                      openFile(p);
+                    }}
+                    workspaceId={workspaceId}
+                    onRefresh={fetchTree}
+                    onDeleteWorkspace={() => {
+                      setSelectedFile(null);
+                      setFileContent("");
+                    }}
+                    onWorkspaceIdChange={(id) => {
+                      setWorkspaceId(id);
+                      localStorage.setItem("active_workspace_id", id);
+                    }}
+                  />
+                </div>
+                <div className="flex-1 flex flex-col min-w-0 bg-[#0e0e11]">
+                  {selectedFile ? (
+                    isDiffMode ? (
+                      <DiffEditor
+                        height="100%"
+                        theme="vs-dark"
+                        original={originalContent}
+                        modified={fileContent}
+                        language={
+                          selectedFile.split(".").pop() || "plaintext"
+                        }
+                        options={{
+                          minimap: { enabled: false },
+                          readOnly: false,
+                          fontSize: 13,
+                          fontFamily: "'JetBrains Mono', monospace",
+                        }}
+                        onMount={(editor) => {
+                          editor
+                            .getModifiedEditor()
+                            .onDidChangeModelContent(() => {
+                              setFileContent(
+                                editor.getModifiedEditor().getValue(),
+                              );
+                            });
+                        }}
+                      />
                     ) : (
-                      <div className="h-full flex items-center justify-center text-slate-500 text-sm">
-                        Select a file to view
-                      </div>
-                    )}
-                  </div>
-                </>
-              ) : ideTab === "browser" ? (
+                      <Editor
+                        height="100%"
+                        theme="vs-dark"
+                        value={fileContent}
+                        language={
+                          selectedFile.split(".").pop() || "plaintext"
+                        }
+                        options={{
+                          minimap: { enabled: false },
+                          fontSize: 13,
+                          fontFamily: "'JetBrains Mono', monospace",
+                          wordWrap: "on",
+                        }}
+                        onChange={(v) => setFileContent(v || "")}
+                        onMount={(editor) => {
+                          editorRef.current = editor;
+                        }}
+                      />
+                    )
+                  ) : (
+                    <div className="h-full flex items-center justify-center text-slate-500 text-sm">
+                      Select a file to view
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Browser Preview Tab */}
+              <div className={`flex-1 flex overflow-hidden ${ideTab === "browser" ? "" : "hidden"}`}>
                 <BrowserPreview />
-              ) : ideTab === "terminal" ? (
+              </div>
+
+              {/* Terminal Tab */}
+              <div className={`flex-1 flex overflow-hidden ${ideTab === "terminal" ? "" : "hidden"}`}>
                 <TerminalUI workspaceId={workspaceId} />
-              ) : (
-                <SearchUI
+              </div>
+
+              {/* Git Tab */}
+              <div className={`flex-1 flex overflow-hidden ${ideTab === "git" ? "" : "hidden"}`}>
+                <GitUI
                   workspaceId={workspaceId}
-                  onOpen={(p) => {
+                  onOpenFile={(p) => {
                     openFile(p);
                     setIdeTab("editor");
                   }}
+                  onRefreshWorkspace={fetchTree}
                 />
-              )}
+              </div>
+
+              {/* Search Tab */}
+              <div className={`flex-1 flex overflow-hidden ${ideTab === "search" ? "" : "hidden"}`}>
+                <SearchUI
+                  workspaceId={workspaceId}
+                  onOpen={(p, line) => {
+                    openFile(p);
+                    setIdeTab("editor");
+                    if (line) {
+                      setTargetLine(line);
+                    }
+                  }}
+                />
+              </div>
             </div>
           </div>
         </div>

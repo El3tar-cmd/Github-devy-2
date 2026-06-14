@@ -9,11 +9,15 @@ import path from 'path';
 import * as cheerio from 'cheerio';
 import { WebSocketServer, WebSocket } from 'ws';
 import http from 'http';
+import net from 'net';
 
 const execAsync = promisify(exec);
 
 const app = express();
 const PORT = 3000;
+
+// Prevent Git commands inside workspaces from traversing up to the IDE's own Git repo
+process.env.GIT_CEILING_DIRECTORIES = path.resolve(process.cwd());
 
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
@@ -761,6 +765,156 @@ app.get('/api/workspace/export-zip', async (req, res) => {
   }
 });
 
+app.post('/api/workspace/import-folder', async (req, res) => {
+  try {
+    const { workspaceId, files, clearFirst, stripPrefix } = req.body;
+    // files: Array<{ relativePath: string; base64: string }>
+    if (!workspaceId) return res.status(400).json({ error: 'workspaceId is required' });
+    if (!Array.isArray(files) || files.length === 0) return res.status(400).json({ error: 'files array is required' });
+
+    const baseDir = path.resolve(getWorkspaceDir(workspaceId));
+    await fs.mkdir(baseDir, { recursive: true });
+
+    // Clear workspace first if requested (replace existing project)
+    if (clearFirst) {
+      const existingEntries = await fs.readdir(baseDir, { withFileTypes: true }).catch(() => []);
+      for (const entry of existingEntries) {
+        if (entry.name === 'node_modules' || entry.name === '.git') continue;
+        await fs.rm(path.join(baseDir, entry.name), { recursive: true, force: true }).catch(() => {});
+      }
+    }
+
+    // Only strip common top-level prefix when stripPrefix is not explicitly false
+    let commonPrefix = '';
+    if (stripPrefix !== false && files.length > 0) {
+      const firstParts = files[0].relativePath.split('/');
+      if (firstParts.length > 1) {
+        const candidate = firstParts[0];
+        const isCommon = files.every((f: { relativePath: string }) => f.relativePath.startsWith(candidate + '/'));
+        if (isCommon) commonPrefix = candidate + '/';
+      }
+    }
+
+    let written = 0;
+    for (const { relativePath, base64 } of files) {
+      // Security: sanitize the relative path
+      let safeName = relativePath;
+      if (commonPrefix && safeName.startsWith(commonPrefix)) {
+        safeName = safeName.slice(commonPrefix.length);
+      }
+      if (!safeName) continue;
+      // Prevent path traversal
+      const targetPath = path.resolve(baseDir, safeName);
+      const relative = path.relative(baseDir, targetPath);
+      if (relative.startsWith('..') || path.isAbsolute(relative)) continue;
+
+      await fs.mkdir(path.dirname(targetPath), { recursive: true });
+      await fs.writeFile(targetPath, Buffer.from(base64, 'base64'));
+      written++;
+    }
+
+    res.json({ success: true, written });
+  } catch (error: any) {
+    console.error('Error importing folder:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+async function copyDirRecursive(src: string, dest: string, exclude: string[] = ['node_modules', '.git']) {
+  await fs.mkdir(dest, { recursive: true });
+  const entries = await fs.readdir(src, { withFileTypes: true });
+
+  for (const entry of entries) {
+    const srcPath = path.join(src, entry.name);
+    const destPath = path.join(dest, entry.name);
+
+    if (exclude.includes(entry.name)) {
+      continue;
+    }
+
+    if (entry.isDirectory()) {
+      await copyDirRecursive(srcPath, destPath, exclude);
+    } else if (entry.isFile() || entry.isSymbolicLink()) {
+      await fs.copyFile(srcPath, destPath);
+    }
+  }
+}
+
+app.post('/api/workspace/import-local-path', async (req, res) => {
+  try {
+    const { workspaceId, localPath } = req.body;
+    if (!workspaceId) return res.status(400).json({ error: 'workspaceId is required' });
+    if (!localPath) return res.status(400).json({ error: 'localPath is required' });
+
+    let resolvedPath = localPath;
+    if (resolvedPath.startsWith('~')) {
+      const homeDir = process.env.HOME || '/data/data/com.termux/files/home';
+      resolvedPath = path.join(homeDir, resolvedPath.slice(1));
+    } else {
+      resolvedPath = path.resolve(resolvedPath);
+    }
+
+    try {
+      const stat = await fs.stat(resolvedPath);
+      if (!stat.isDirectory()) {
+        return res.status(400).json({ error: 'المسار المحدد ليس مجلداً' });
+      }
+    } catch {
+      return res.status(400).json({ error: 'المسار المحدد غير موجود أو غير قابل للقراءة' });
+    }
+
+    const folderName = path.basename(resolvedPath);
+    const baseDir = path.resolve(getWorkspaceDir(folderName));
+    await fs.mkdir(baseDir, { recursive: true });
+
+    await copyDirRecursive(resolvedPath, baseDir);
+
+    res.json({ success: true, folderName });
+  } catch (error: any) {
+    console.error('Error importing local path:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/workspace/list-local-dirs', async (req, res) => {
+  try {
+    const { localPath } = req.body;
+    let targetPath = localPath;
+
+    const homeDir = process.env.HOME || '/data/data/com.termux/files/home';
+
+    if (!targetPath) {
+      targetPath = homeDir;
+    } else if (targetPath.startsWith('~')) {
+      targetPath = path.join(homeDir, targetPath.slice(1));
+    } else {
+      targetPath = path.resolve(targetPath);
+    }
+
+    // Ensure it exists and is a directory
+    const stat = await fs.stat(targetPath);
+    if (!stat.isDirectory()) {
+      return res.status(400).json({ error: 'المسار المحدد ليس مجلداً' });
+    }
+
+    const entries = await fs.readdir(targetPath, { withFileTypes: true });
+    const dirs = entries
+      .filter(entry => entry.isDirectory() && entry.name !== 'node_modules' && entry.name !== '.git')
+      .map(entry => entry.name)
+      .sort();
+
+    res.json({
+      success: true,
+      currentPath: targetPath,
+      parentPath: targetPath === '/' ? null : path.dirname(targetPath),
+      dirs,
+    });
+  } catch (error: any) {
+    console.error('Error listing local dirs:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.post('/api/workspace/import-zip', async (req, res) => {
   try {
     const { workspaceId, zipBase64 } = req.body;
@@ -844,13 +998,14 @@ app.post('/api/workspace/import-zip', async (req, res) => {
 
 app.post('/api/fs/search', async (req, res) => {
   try {
-    const { pattern, directory = '.', workspaceId } = req.body;
+    const { pattern, directory = '.', workspaceId, caseSensitive = true } = req.body;
     const { wDir } = await safePath(workspaceId, directory);
     // Use grep to search, excluding large generated or lock/cache directories
     const ignoredDirs = ['.git', 'node_modules', '.chromium-profile', '.npm', '.cache', 'dist', 'build', 'out', 'venv', '.venv', '__pycache__'];
     const excludeFlags = ignoredDirs.map(d => `--exclude-dir="${d}"`).join(' ');
     
-    const { stdout } = await execAsync(`grep -rnI ${excludeFlags} "${pattern.replace(/"/g, '\\"')}" .`, { cwd: wDir });
+    const caseFlag = caseSensitive ? '' : '-i';
+    const { stdout } = await execAsync(`grep -rnI ${caseFlag} ${excludeFlags} "${pattern.replace(/"/g, '\\"')}" .`, { cwd: wDir });
     res.json({ matches: stdout });
   } catch (error: any) {
     // grep returns exit code 1 if no matches found
@@ -1090,6 +1245,146 @@ app.post('/api/git/commit', async (req, res) => {
   }
 });
 
+app.post('/api/git/status', async (req, res) => {
+  try {
+    const { workspaceId } = req.body;
+    const { wDir } = await safePath(workspaceId, '.');
+    const git = simpleGit(wDir);
+    const isRepo = await git.checkIsRepo();
+    if (!isRepo) {
+      return res.json({ isRepository: false, files: [] });
+    }
+
+    const status = await git.status();
+    const files = status.files.map(f => {
+      let state = 'modified';
+      if (f.index === '?' || f.working_dir === '?') state = 'untracked';
+      else if (f.index === 'A' || f.working_dir === 'A') state = 'added';
+      else if (f.index === 'D' || f.working_dir === 'D') state = 'deleted';
+      return {
+        path: f.path,
+        state
+      };
+    });
+
+    const currentBranch = status.current || 'main';
+
+    res.json({
+      isRepository: true,
+      currentBranch,
+      files,
+      ahead: status.ahead,
+      behind: status.behind
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/git/diff', async (req, res) => {
+  try {
+    const { workspaceId, filePath } = req.body;
+    if (!filePath) return res.status(400).json({ error: 'filePath is required' });
+    const { wDir } = await safePath(workspaceId, '.');
+    const git = simpleGit(wDir);
+
+    let diff = '';
+    try {
+      diff = await git.diff([filePath]);
+      if (!diff) {
+        diff = await git.diff(['--cached', filePath]);
+      }
+    } catch {
+      diff = 'Unable to get diff.';
+    }
+
+    res.json({ success: true, diff });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/git/push', async (req, res) => {
+  try {
+    const { workspaceId } = req.body;
+    const { wDir } = await safePath(workspaceId, '.');
+    const git = simpleGit(wDir);
+    await git.push();
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/git/pull', async (req, res) => {
+  try {
+    const { workspaceId } = req.body;
+    const { wDir } = await safePath(workspaceId, '.');
+    const git = simpleGit(wDir);
+    const result = await git.pull();
+    res.json({ success: true, summary: result.summary });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/git/init', async (req, res) => {
+  try {
+    const { workspaceId } = req.body;
+    const { wDir } = await safePath(workspaceId, '.');
+    const git = simpleGit(wDir);
+    await git.init();
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+function checkPortActive(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    socket.setTimeout(150);
+    socket.on('connect', () => {
+      socket.destroy();
+      resolve(true);
+    });
+    socket.on('timeout', () => {
+      socket.destroy();
+      resolve(false);
+    });
+    socket.on('error', () => {
+      socket.destroy();
+      resolve(false);
+    });
+    socket.connect(port, '127.0.0.1');
+  });
+}
+
+const COMMON_PORTS = [
+  3000, 3001, 3002, 3003, 3004, 3005,
+  4200, 5000, 5001, 5173, 5174, 5175,
+  8000, 8001, 8080, 8081, 8082, 9000
+];
+
+app.post('/api/workspace/active-ports', async (req, res) => {
+  try {
+    const activePorts: number[] = [];
+    const scanPromises = COMMON_PORTS.map(async (port) => {
+      const active = await checkPortActive(port);
+      if (active) {
+        activePorts.push(port);
+      }
+    });
+
+    await Promise.all(scanPromises);
+    activePorts.sort((a, b) => a - b);
+    
+    res.json({ success: true, ports: activePorts });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.get('/api/workspaces', async (req, res) => {
   try {
     await fs.mkdir(BASE_WORKSPACE_DIR, { recursive: true });
@@ -1194,6 +1489,8 @@ async function startServer() {
     try {
       const url = new URL(req.url || '', `http://${req.headers.host}`);
       const workspaceId = url.searchParams.get('workspaceId');
+      const tabId = url.searchParams.get('tabId') || 'default';
+      const sessionKey = `${workspaceId}_${tabId}`;
       if (!workspaceId) {
         // Intercept and proxy WebSocket connection to local port (Vite HMR, Chat WS, etc.)
         let wsPort: number | null = null;
@@ -1267,16 +1564,24 @@ async function startServer() {
         return;
       }
 
-      let session = terminalSessions.get(workspaceId);
+      let session = terminalSessions.get(sessionKey);
       if (!session) {
-        let selectedShell = 'sh';
-        if (existsSync('/bin/bash')) {
-          selectedShell = '/bin/bash';
-        } else if (existsSync('/bin/sh')) {
-          selectedShell = '/bin/sh';
+        let selectedShell = process.env.SHELL || '';
+        if (!selectedShell || !existsSync(selectedShell)) {
+          if (existsSync('/usr/bin/bash')) {
+            selectedShell = '/usr/bin/bash';
+          } else if (existsSync('/bin/bash')) {
+            selectedShell = '/bin/bash';
+          } else if (existsSync('/usr/bin/sh')) {
+            selectedShell = '/usr/bin/sh';
+          } else if (existsSync('/bin/sh')) {
+            selectedShell = '/bin/sh';
+          } else {
+            selectedShell = 'sh';
+          }
         }
 
-        const bash = spawn(selectedShell, [], { 
+        const bash = spawn(selectedShell, ['-i'], { 
           env: { 
             ...process.env, 
             TERM: 'xterm-256color',
@@ -1290,7 +1595,7 @@ async function startServer() {
           outputBuffer: [],
           activeSockets: new Set(),
         };
-        terminalSessions.set(workspaceId, session);
+        terminalSessions.set(sessionKey, session);
 
         const appendToBuffer = (text: string) => {
           if (!session) return;
@@ -1351,7 +1656,7 @@ async function startServer() {
               try { socket.close(); } catch (_) {}
             }
           }
-          terminalSessions.delete(workspaceId);
+          terminalSessions.delete(sessionKey);
         });
       }
 

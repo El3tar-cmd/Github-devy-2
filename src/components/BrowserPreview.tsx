@@ -14,8 +14,30 @@ const deparseUrl = (proxyUrl: string): string => {
 };
 
 export function BrowserPreview() {
-  const [url, setUrl] = useState('/proxy/5173/');
-  const [inputUrl, setInputUrl] = useState('http://localhost:5173');
+  const [url, setUrl] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('browser_preview_url');
+      return saved || '/proxy/5173/';
+    }
+    return '/proxy/5173/';
+  });
+
+  const [inputUrl, setInputUrl] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('browser_preview_input_url');
+      return saved || 'http://localhost:5173';
+    }
+    return 'http://localhost:5173';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('browser_preview_url', url);
+  }, [url]);
+
+  useEffect(() => {
+    localStorage.setItem('browser_preview_input_url', inputUrl);
+  }, [inputUrl]);
+
   const [key, setKey] = useState(0);
   
   // DOM Diagnostics panel states

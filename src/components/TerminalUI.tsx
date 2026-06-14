@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Terminal } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
-import { Play, Square, RefreshCw, Terminal as TerminalIcon, AlertCircle, Cpu, Wifi, WifiOff } from 'lucide-react';
+import { Play, Square, RefreshCw, Terminal as TerminalIcon, AlertCircle, Cpu, Wifi, WifiOff, X } from 'lucide-react';
 import 'xterm/css/xterm.css';
 
 interface Props {
@@ -36,6 +36,46 @@ export function TerminalUI({ workspaceId }: Props) {
   const [logContent, setLogContent] = useState<string>(
     '=== Terminal Stream Logs ===\r\nType commands in the console assistant box or input directly on the terminal canvas.\r\nOutputs are fully synchronized with the host sandbox process in real-time.\r\n\r\n'
   );
+
+  const [tabs, setTabs] = useState<string[]>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem(`terminal_tabs_${workspaceId}`);
+      return saved ? JSON.parse(saved) : ['1'];
+    }
+    return ['1'];
+  });
+
+  const [activeTabId, setActiveTabId] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem(`terminal_active_tab_${workspaceId}`);
+      return saved || '1';
+    }
+    return '1';
+  });
+
+  useEffect(() => {
+    localStorage.setItem(`terminal_tabs_${workspaceId}`, JSON.stringify(tabs));
+  }, [tabs, workspaceId]);
+
+  useEffect(() => {
+    localStorage.setItem(`terminal_active_tab_${workspaceId}`, activeTabId);
+  }, [activeTabId, workspaceId]);
+
+  const addTab = () => {
+    const nextId = String(Math.max(...tabs.map(t => parseInt(t, 10) || 1), 0) + 1);
+    setTabs(prev => [...prev, nextId]);
+    setActiveTabId(nextId);
+  };
+
+  const removeTab = (tabIdToRemove: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (tabs.length === 1) return;
+    if (activeTabId === tabIdToRemove) {
+      const nextActive = tabs.find(t => t !== tabIdToRemove) || '1';
+      setActiveTabId(nextActive);
+    }
+    setTabs(prev => prev.filter(t => t !== tabIdToRemove));
+  };
 
   // Buffer sync
   useEffect(() => {
@@ -211,7 +251,7 @@ export function TerminalUI({ workspaceId }: Props) {
       if (!isComponentMounted) return;
 
       const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${wsProto}//${window.location.host}?workspaceId=${workspaceId}`;
+      const wsUrl = `${wsProto}//${window.location.host}?workspaceId=${workspaceId}&tabId=${activeTabId}`;
       setConnectionStatus(prev => (prev === 'error' || prev === 'disconnected') ? 'reconnecting' : 'connecting');
 
       try {
@@ -320,7 +360,7 @@ export function TerminalUI({ workspaceId }: Props) {
       xtermRef.current = null;
       wsRef.current = null;
     };
-  }, [workspaceId]);
+  }, [workspaceId, activeTabId]);
 
   // Quick preset shortcuts
   const runPreset = (commandPreset: string) => {
@@ -415,6 +455,43 @@ export function TerminalUI({ workspaceId }: Props) {
                 )}
              </div>
            </div>
+        </div>
+
+        {/* Terminal Tabs Bar */}
+        <div className="mb-2 flex items-center justify-between gap-2 bg-[#101016]/60 border border-white/5 rounded-xl p-1.5 overflow-x-auto scrollbar-thin">
+          <div className="flex items-center gap-1">
+            {tabs.map((tabId) => (
+              <div
+                key={tabId}
+                onClick={() => setActiveTabId(tabId)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono rounded-lg cursor-pointer transition-all border ${
+                  activeTabId === tabId
+                    ? 'bg-sky-500/15 text-sky-400 border-sky-500/35 shadow-sm shadow-sky-500/5'
+                    : 'text-slate-400 hover:text-slate-200 bg-transparent border-transparent hover:bg-white/5'
+                }`}
+              >
+                <TerminalIcon className={`w-3.5 h-3.5 ${activeTabId === tabId ? 'text-sky-400' : 'text-slate-500'}`} />
+                <span>Bash #{tabId}</span>
+                {tabs.length > 1 && (
+                  <button
+                    onClick={(e) => removeTab(tabId, e)}
+                    className="p-0.5 hover:bg-white/10 rounded text-slate-500 hover:text-rose-400 transition-colors"
+                    title="إغلاق الطرفية"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+            ))}
+            <button
+              onClick={addTab}
+              className="p-1.5 px-2 bg-white/5 hover:bg-white/10 text-slate-300 rounded-lg text-xs font-mono transition-colors border border-white/5 flex items-center gap-1 shrink-0"
+              title="فتح طرفية جديدة"
+            >
+              <span>+</span>
+              <span className="text-[10px] font-sans">جديد</span>
+            </button>
+          </div>
         </div>
 
         {/* Error Dialog Banner */}

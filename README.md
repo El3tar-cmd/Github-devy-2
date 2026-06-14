@@ -166,6 +166,27 @@ The innovative terminal automatically adjusts depending on network settings:
 
 ---
 
+## 🦙 Ollama Local Integration & Tool-Calling | التكامل مع نماذج Ollama المحلية واستدعاء الأدوات
+
+**Github-devy** has an advanced, deep client-side integration built specifically for **Ollama**, allowing developers to build and customize with fully local, private generative models:
+
+- **Dynamic Model Discovery:** Easily input your local or server Ollama endpoint (e.g., `http://localhost:11434`) and the system automatically fetches all installed models (e.g., `llama3`, `mistral`, `codegemma`, `qwen`) by querying Ollama's active tags endpoint.
+- **Bespoke Emulator Schema for Local Models:** Since local models have varying support for structured function calling, `src/ollama.ts` embeds a client-side emulation engine with a tailored `TOOLS_SCHEMA` to direct models on executing workspace tasks step-by-step.
+- **Granular Desktop & Sandbox Execution:** Enables local models to perform critical sandbox operations safely such as:
+  - Reading, writing, and surgically replacing content in files.
+  - Recursively mapping directory-trees and listing available works.
+  - Executing server-side commands with standard sandbox privileges.
+  - Searching and scraping live websites for developer reference.
+  - Navigating, typing, and capturing viewport/HTML state buffers of the sandbox's embedded browser preview.
+  - Seamlessly stashing and committing changes to GitHub!
+
+### كيف يعمل تكامل Ollama ومميزاته البرمجية؟
+1. **تحديث وقراءة لحظية للنماذج:** بمجرد تخصيص عنوان الـ API الخاص بـ Ollama في الحزمة، تتواصل المنصة وتجلب النماذج الجاهزة فوراً في لوحة التحكم.
+2. **محاكاة استدعاء الوظائف (Function-Calling Simulation):** تم تزويد النظام بمحاكي ذكي يترجم رغبة النماذج المحلية إلى مدخلات برمجية دقيقة للقيام بالعمليات خطوة بخطوة.
+3. **أمان تام وقدرة تشغيل محلية مجانية (Offline-Friendly):** تخلص من رسوم الاستهلاك السحابية وتحكم في كامل ملفاتك وبرامجك محلياً بشكل سري وآمن مستعيناً بالنوى البرمجية لجهازك الخاص وبتكامل تام مع مساحات العمل.
+
+---
+
 ### 📄 License
 
 Professional Workspace Project designed & crafted perfectly to bridge developer ecosystems with generative AI workflows.

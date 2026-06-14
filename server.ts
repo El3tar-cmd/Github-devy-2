@@ -1043,7 +1043,7 @@ async function startServer() {
 
   interface TerminalSession {
     bash: any;
-    outputBuffer: Buffer[];
+    outputBuffer: string[];
     activeSockets: Set<any>;
   }
 
@@ -1147,9 +1147,10 @@ async function startServer() {
         };
         terminalSessions.set(workspaceId, session);
 
-        const appendToBuffer = (data: Buffer) => {
-          session?.outputBuffer.push(data);
-          if (session && session.outputBuffer.length > 2000) {
+        const appendToBuffer = (text: string) => {
+          if (!session) return;
+          session.outputBuffer.push(text);
+          if (session.outputBuffer.length > 2000) {
             session.outputBuffer.shift();
           }
         };
@@ -1168,10 +1169,11 @@ async function startServer() {
             console.error('Terminal stdout error:', err);
           });
           bash.stdout.on('data', (data) => {
-            appendToBuffer(data);
+            const text = data.toString('utf8');
+            appendToBuffer(text);
             if (session) {
               for (const socket of session.activeSockets) {
-                try { socket.send(data); } catch (_) {}
+                try { socket.send(text); } catch (_) {}
               }
             }
           });
@@ -1182,10 +1184,11 @@ async function startServer() {
             console.error('Terminal stderr error:', err);
           });
           bash.stderr.on('data', (data) => {
-            appendToBuffer(data);
+            const text = data.toString('utf8');
+            appendToBuffer(text);
             if (session) {
               for (const socket of session.activeSockets) {
-                try { socket.send(data); } catch (_) {}
+                try { socket.send(text); } catch (_) {}
               }
             }
           });
@@ -1215,14 +1218,15 @@ async function startServer() {
       });
 
       // Replay all buffered lines so far to this connection so they see what happened in the background!
-      for (const buffer of session.outputBuffer) {
-        try { ws.send(buffer); } catch (_) {}
+      for (const text of session.outputBuffer) {
+        try { ws.send(text); } catch (_) {}
       }
 
       ws.on('message', (msg) => {
         try {
           if (session && session.bash.stdin && session.bash.stdin.writable) {
-            session.bash.stdin.write(msg);
+            const text = typeof msg === 'string' ? msg : msg.toString('utf8');
+            session.bash.stdin.write(text);
           }
         } catch (_) {}
       });

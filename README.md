@@ -12,7 +12,9 @@
     <a href="#-architecture">Architecture</a> •
     <a href="#%D9%83%D9%8A%D9%81%D9%8A%D8%A9-%D8%A7%D9%84%D8%AA%D8%B4%D8%BA%D9%8A%D9%84">التشغيل</a> •
     <a href="#-getting-started">Getting Started</a> •
-    <a href="#-tech-stack">Tech Stack</a>
+    <a href="#-tech-stack">Tech Stack</a> •
+    <a href="#-api-reference">API Reference</a> •
+    <a href="#-contributing">Contributing</a>
   </p>
 </div>
 
@@ -21,6 +23,23 @@
 **Github-devy** هو منصة ويب متطورة وبيئة تطوير متكاملة (Cloud IDE) سحابية بالكامل، تدمج بين واجهة إدارة الملفات، والطرفية التفاعلية الهجينة (Terminal)، واستعراض المتصفح المباشر (Browser Preview)، مع محركات ذكاء اصطناعي متعددة (Gemini & Ollama) لمساعدتك في بناء وتطوير وإدارة المشاريع البرمجية في بيئة معزولة (Sandboxed-Workspaces) وبكفاءة غير مسبوقة.
 
 **Github-devy** is an advanced, fully-featured cloud-based development environment and AI agent workspace. It consolidates a robust file explorer, an interactive dual-fallback terminal, sandboxed live preview browser proxy, and dual AI models (Google Gemini API & local Ollama) into a unified, high-performance developer console.
+
+---
+
+## 📋 Table of Contents / جدول المحتويات
+
+- [Overview](#-github-devy)
+- [Features](#-features--الميزات-الرئيسية)
+- [Architecture](#-architecture--معمارية-المنصة)
+- [Tech Stack](#-tech-stack--التقنيات-المستخدمة)
+- [Getting Started](#-getting-started--كيفية-التشغيل-محلياً)
+- [Configuration](#-configuration--الإعدادات)
+- [Components Documentation](#-components-documentation--توثيق-المكونات)
+- [API Reference](#-api-reference--مرجع-واجهة-البرمجة)
+- [Advanced Features](#-advanced-features--الميزات-المتقدمة)
+- [Troubleshooting](#-troubleshooting--حل-المشاكل)
+- [Contributing](#-contributing--المساهمة)
+- [License](#-license)
 
 ---
 
@@ -138,19 +157,87 @@
 ## 📂 Key File Structure / هيكل المشروع
 
 ```
-├── .agent_workspace/     # Isolated workspace folders (GitIgnored for safety)
-├── server.ts             # Express & Websocket backend, asset router & API proxying
-├── src/
-│   ├── App.tsx           # Primary application view manager
-│   ├── types.ts          # Unified TS Interfaces & System Types
-│   ├── components/
-│   │   ├── TerminalUI.tsx     # Hybrid xterm.js UI with WebSocket / HTTP Fallback
-│   │   ├── BrowserPreview.tsx # Sandboxed iframe previewer
-│   │   ├── FileTree.tsx       # Dynamic directory file-system tree
-│   │   ├── ChatMessageUI.tsx  # Integrated AI assistance workspace
-│   │   └── SettingsPanel.tsx  # Developer preference configuration hub
-├── index.html            # Main SPA html
-└── package.json          # Dependency and build configuration
+Github-devy/
+├── .agent_workspace/          # Isolated workspace folders (GitIgnored for safety)
+├── .env.example               # Environment configuration template
+├── .gitignore                 # Git ignore patterns
+├── build-server.js            # Server build compilation script
+├── dist/                      # Compiled distribution files
+├── docs.html                  # Interactive documentation page
+├── index.html                 # Main SPA entry point
+├── metadata.json              # Project metadata
+├── package.json               # Dependency and build configuration
+├── server.ts                  # Express & Websocket backend entry point
+├── tsconfig.json              # TypeScript compiler configuration
+├── vite.config.ts             # Vite build configuration
+├── server/                    # Backend server modules
+│   ├── routes/                # API route handlers
+│   │   ├── ai.ts             # Google Gemini API integration
+│   │   ├── browser.ts        # Browser preview & proxy routes
+│   │   ├── cmd.ts            # Command execution routes
+│   │   ├── db.ts             # Database management routes
+│   │   ├── debug.ts          # Debugger interface routes
+│   │   ├── fs.ts             # File system operations
+│   │   ├── git.ts            # Git operations integration
+│   │   ├── package.ts        # Package management routes
+│   │   ├── web.ts            # Web scraping & search
+│   │   └── workspace.ts      # Workspace management
+│   ├── utils/                 # Server utilities
+│   │   └── workspace.ts      # Workspace utility functions
+│   └── websocket/             # WebSocket handlers
+│       ├── terminal.ts       # Terminal WebSocket implementation
+│       └── events.ts         # Event management
+├── src/                       # Frontend source code
+│   ├── App.tsx               # Primary application view manager
+│   ├── main.tsx              # React application entry point
+│   ├── types.ts              # Unified TS Interfaces & System Types
+│   ├── geminiApi.ts          # Google Gemini API client
+│   ├── ollama.ts             # Ollama integration client
+│   ├── useAgent.ts           # Agent management hook
+│   ├── useWorkspace.ts       # Workspace management hook
+│   ├── useEventBus.ts        # Event communication system
+│   ├── agent/                # AI Agent system
+│   │   ├── index.ts          # Agent entry point
+│   │   ├── runAgentLoop.ts   # Main agent execution loop
+│   │   ├── summarizeHistory.ts # Chat history summarization
+│   │   └── useAgentSessions.ts # Session management
+│   ├── contexts/             # React contexts
+│   │   ├── AgentContext.tsx  # Agent state management
+│   │   └── WorkspaceContext.tsx # Workspace state management
+│   └── components/           # React components
+│       ├── layout/           # Layout components
+│       │   ├── ChatLayout.tsx    # Chat interface layout
+│       │   ├── IdeLayout.tsx     # IDE interface layout
+│       │   └── SidebarLayout.tsx # Sidebar navigation
+│       ├── filetree/         # File tree components
+│       │   ├── FileModals.tsx    # File operation modals
+│       │   ├── ImportExport.tsx  # Import/export functionality
+│       │   ├── TermuxBrowser.tsx # Termux file browser
+│       │   ├── TreeNode.tsx      # Tree node component
+│       │   └── index.tsx         # File tree container
+│       ├── terminal/         # Terminal components
+│       │   ├── ProcessManager.tsx # Process management UI
+│       │   ├── TerminalToolbar.tsx # Terminal toolbar
+│       │   ├── index.tsx         # Terminal container
+│       │   ├── useTerminalConnection.ts # Terminal connection hook
+│       │   └── useTerminalTabs.ts # Terminal tabs management
+│       ├── AIBuilder.tsx         # AI-powered UI builder
+│       ├── BrowserPreview.tsx    # Sandboxed browser preview
+│       ├── ChatMessageUI.tsx     # Chat message interface
+│       ├── DatabaseManager.tsx   # Database management interface
+│       ├── DebuggerPanel.tsx     # Debugger interface
+│       ├── FileTree.tsx          # Main file tree component
+│       ├── GitUI.tsx             # Git operations interface
+│       ├── PackageManager.tsx    # Package manager interface
+│       ├── PlannerPanel.tsx      # AI planning panel
+│       ├── PortManager.tsx       # Port management interface
+│       ├── SearchUI.tsx          # Search interface
+│       ├── SettingsPanel.tsx     # Settings configuration
+│       └── TerminalUI.tsx        # Terminal interface
+├── tools/                     # Utility scripts
+│   ├── browser_test.js        # Browser testing utilities
+│   └── platform_test.js       # Platform compatibility tests
+└── node_modules/             # NPM dependencies
 ```
 
 ---

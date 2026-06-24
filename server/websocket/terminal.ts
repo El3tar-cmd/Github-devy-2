@@ -1,25 +1,106 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import http from 'http';
 import { spawn } from 'child_process';
-import { existsSync } from 'fs';
 import fs from 'fs/promises';
+import os from 'os';
+import path from 'path';
 import { safePath } from '../utils/workspace';
+import { killProcessTree } from '../utils/process';
+import { resolveInteractiveShellLaunch } from '../utils/shell';
 
 import { handleEventConnection } from './events';
 
 interface TerminalSession {
   bash: any;
+  workspaceId: string;
+  tabId: string;
+  rcFile?: string;
   outputBuffer: string[];
   activeSockets: Set<any>;
 }
 
 export const terminalSessions = new Map<string, TerminalSession>();
 
+function shellQuote(value: string) {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+async function createWorkspaceGuardRc(workspaceRoot: string, workspaceId: string, tabId: string) {
+  const safeName = `${workspaceId}_${tabId}`.replace(/[^a-zA-Z0-9_.-]/g, '_');
+  const rcFile = path.join(os.tmpdir(), `github-devy-terminal-${safeName}.bashrc`);
+  const quotedRoot = shellQuote(workspaceRoot);
+  const content = `
+export AGENT_WORKSPACE_ROOT=${quotedRoot}
+
+_agent_workspace_guard() {
+  case "$PWD/" in
+    "$AGENT_WORKSPACE_ROOT/"*) return 0 ;;
+  esac
+  printf '\\n[Security] Terminal cannot leave workspace root. Returning to %s\\n' "$AGENT_WORKSPACE_ROOT"
+  builtin cd "$AGENT_WORKSPACE_ROOT" 2>/dev/null || exit 1
+}
+
+cd() {
+  local target
+  local resolved
+
+  if [ "$#" -eq 0 ]; then
+    builtin cd "$AGENT_WORKSPACE_ROOT"
+    return $?
+  fi
+
+  target="$1"
+  resolved="$(builtin cd "$target" 2>/dev/null && pwd -P)"
+  if [ -n "$resolved" ]; then
+    case "$resolved/" in
+      "$AGENT_WORKSPACE_ROOT/"*) builtin cd "$@" ;;
+      *)
+        printf '\\n[Security] Cannot cd outside workspace root: %s\\n' "$AGENT_WORKSPACE_ROOT"
+        builtin cd "$AGENT_WORKSPACE_ROOT"
+        return 1
+        ;;
+    esac
+  else
+    builtin cd "$@"
+  fi
+  local status=$?
+  _agent_workspace_guard
+  return $status
+}
+
+pushd() {
+  builtin pushd "$@"
+  local status=$?
+  _agent_workspace_guard
+  return $status
+}
+
+popd() {
+  builtin popd "$@"
+  local status=$?
+  _agent_workspace_guard
+  return $status
+}
+
+PROMPT_COMMAND="_agent_workspace_guard\${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
+alias cd..='cd ..'
+builtin cd "$AGENT_WORKSPACE_ROOT" 2>/dev/null || exit 1
+`;
+
+  await fs.writeFile(rcFile, content, { mode: 0o600 });
+  return rcFile;
+}
+
 export function cleanAllTerminalSessions() {
   for (const session of terminalSessions.values()) {
     try {
-      session.bash.kill('SIGKILL');
+      killProcessTree(session.bash.pid).catch(() => {
+        try { session.bash.kill('SIGKILL'); } catch (_) {}
+      });
     } catch (_) {}
+    if (session.rcFile) {
+      fs.unlink(session.rcFile).catch(() => {});
+    }
   }
   terminalSessions.clear();
 }
@@ -116,42 +197,25 @@ export function setupWebSocketTerminal(server: http.Server) {
 
       let session = terminalSessions.get(sessionKey);
       if (!session) {
-        let selectedShell = '';
-        let shellArgs: string[] = [];
+        const rcFile = await createWorkspaceGuardRc(wDir, workspaceId, tabId);
+        const shellLaunch = resolveInteractiveShellLaunch(rcFile);
 
-        if (process.platform === 'win32') {
-          selectedShell = process.env.COMSPEC || 'cmd.exe';
-          shellArgs = [];
-        } else {
-          selectedShell = process.env.SHELL || '';
-          if (!selectedShell || !existsSync(selectedShell)) {
-            if (existsSync('/usr/bin/bash')) {
-              selectedShell = '/usr/bin/bash';
-            } else if (existsSync('/bin/bash')) {
-              selectedShell = '/bin/bash';
-            } else if (existsSync('/usr/bin/sh')) {
-              selectedShell = '/usr/bin/sh';
-            } else if (existsSync('/bin/sh')) {
-              selectedShell = '/bin/sh';
-            } else {
-              selectedShell = 'sh';
-            }
-          }
-          shellArgs = ['-i'];
-        }
-
-        const bash = spawn(selectedShell, shellArgs, { 
+        const bash = spawn(shellLaunch.command, shellLaunch.args, { 
           env: { 
             ...process.env, 
             TERM: 'xterm-256color',
+            COLORTERM: 'truecolor',
             PATH: process.env.PATH || '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
           }, 
           cwd: wDir,
-          detached: false
+          detached: process.platform !== 'win32'
         });
 
         session = {
           bash,
+          workspaceId,
+          tabId,
+          rcFile,
           outputBuffer: [],
           activeSockets: new Set(),
         };
@@ -214,6 +278,9 @@ export function setupWebSocketTerminal(server: http.Server) {
           if (session) {
             for (const socket of session.activeSockets) {
               try { socket.close(); } catch (_) {}
+            }
+            if (session.rcFile) {
+              fs.unlink(session.rcFile).catch(() => {});
             }
           }
           terminalSessions.delete(sessionKey);

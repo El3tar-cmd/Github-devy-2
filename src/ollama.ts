@@ -1,6 +1,7 @@
 import { ChatMessage, Settings, ToolInvocation } from "./types";
 import { AgentOrchestrator } from "./agent/orchestrator/AgentOrchestrator";
 import { TOOLS_SCHEMA } from "./agent/tools/toolsSchema";
+import { getAgentTaskManager } from "./agent/orchestrator/TaskManager";
 
 
 export async function fetchOllamaModels(url: string) {
@@ -41,6 +42,39 @@ export async function executeToolCall(
   signal?: AbortSignal,
 ) {
   const proxyBase = ""; // Running on same domain since Vite proxies/serves in dev/prod
+  const taskManager = getAgentTaskManager();
+  const withProjectGithubToken = (body: any) => {
+    if (!settings?.githubToken || body?.token) return body;
+    return { ...body, token: settings.githubToken };
+  };
+
+  const parseResponse = async (res: Response) => {
+    const contentType = res.headers.get("content-type") || "";
+    const raw = await res.text();
+
+    if (!raw) return {};
+
+    if (contentType.includes("application/json")) {
+      try {
+        return JSON.parse(raw);
+      } catch (err: any) {
+        return {
+          error: `Invalid JSON response from ${res.url || "server"}: ${err.message}`,
+          raw: raw.slice(0, 1000),
+        };
+      }
+    }
+
+    if (raw.trim().startsWith("<")) {
+      return {
+        error: `Unexpected HTML response from ${res.url || "server"}. The API endpoint may be unavailable or the app server may need a restart.`,
+        status: res.status,
+        raw: raw.slice(0, 1000),
+      };
+    }
+
+    return { raw };
+  };
 
   const req = async (path: string, body: any) => {
     const res = await fetch(proxyBase + path, {
@@ -49,7 +83,12 @@ export async function executeToolCall(
       body: JSON.stringify({ ...body, workspaceId }),
       signal,
     });
-    return res.json();
+    return parseResponse(res);
+  };
+
+  const getReq = async (path: string) => {
+    const res = await fetch(proxyBase + path, { method: "GET", signal });
+    return parseResponse(res);
   };
 
   if (name === "run_command") {
@@ -97,6 +136,12 @@ export async function executeToolCall(
       return await req("/api/fs/write", args);
     case "replace_in_file":
       return await req("/api/fs/replace", args);
+    case "create_directory":
+      return await req("/api/fs/mkdir", args);
+    case "rename_path":
+      return await req("/api/fs/rename", args);
+    case "delete_path":
+      return await req("/api/fs/delete", args);
     case "search_content":
       return await req("/api/fs/search", args);
     case "web_search":
@@ -108,7 +153,7 @@ export async function executeToolCall(
     case "git_commit_push":
       return await req("/api/git/commit", args);
     case "clone_git_repository":
-      return await req("/api/git/clone", args);
+      return await req("/api/git/clone", withProjectGithubToken(args));
     case "browser_navigate":
       return await req("/api/browser/action", { type: "navigate", url: args.url });
     case "browser_click":
@@ -129,6 +174,36 @@ export async function executeToolCall(
       return await req("/api/git/push", {});
     case "git_init":
       return await req("/api/git/init", {});
+    case "git_history":
+      return await req("/api/git/history", args);
+    case "git_branches":
+      return await req("/api/git/branches", args);
+    case "git_checkout":
+      return await req("/api/git/checkout", args);
+    case "git_fetch":
+      return await req("/api/git/fetch", args);
+    case "git_merge":
+      return await req("/api/git/merge", args);
+    case "git_remotes":
+      return await req("/api/git/remotes", {});
+    case "git_remote":
+      return await req("/api/git/remote", args);
+    case "git_stash":
+      return await req("/api/git/stash", args);
+    case "git_tags":
+      return await req("/api/git/tags", args);
+    case "github_actions_runs":
+      return await req("/api/git/actions/runs", withProjectGithubToken(args));
+    case "github_actions_run":
+      return await req("/api/git/actions/run", withProjectGithubToken(args));
+    case "github_actions_jobs":
+      return await req("/api/git/actions/jobs", withProjectGithubToken(args));
+    case "github_actions_logs":
+      return await req("/api/git/actions/logs", withProjectGithubToken(args));
+    case "github_actions_artifacts":
+      return await req("/api/git/actions/artifacts", withProjectGithubToken(args));
+    case "github_actions_download_artifact":
+      return await req("/api/git/actions/download-artifact", withProjectGithubToken(args));
     case "manage_packages": {
       if (args.action === "list") {
         return await req("/api/package/list", {});
@@ -162,6 +237,30 @@ export async function executeToolCall(
       }
       return { output: result || "Package operation executed successfully." };
     }
+    case "database_list":
+      return await req("/api/db/list", {});
+    case "database_tables":
+      return await req("/api/db/tables", args);
+    case "database_query":
+      return await req("/api/db/query", args);
+    case "debug_start":
+      return await req("/api/debug/start", args);
+    case "debug_logs":
+      return await req("/api/debug/logs", args);
+    case "debug_kill":
+      return await req("/api/debug/kill", args);
+    case "debug_sessions":
+      return await getReq("/api/debug/sessions");
+    case "list_active_processes":
+      return await getReq("/api/cmd/active");
+    case "kill_process":
+      return await req("/api/cmd/kill", args);
+    case "sandbox_logs":
+      return await getReq("/api/sandbox/logs");
+    case "sandbox_clear_logs":
+      return await req("/api/sandbox/clear", {});
+    case "sandbox_trigger_webhook":
+      return await req("/api/sandbox/trigger-webhook", args);
     case "ask_human": {
       if ((window as any).askHuman) {
         const answer = await (window as any).askHuman(args.question);
@@ -480,16 +579,18 @@ export async function executeToolCall(
         const latest = allAgents[allAgents.length - 1];
         return {
           agentId: latest ? latest.id : "unknown",
+          taskId: latest?.taskId || null,
           agentType: args.agentType,
           status: "running",
           background: true,
-          message: "Sub-agent started successfully in the background. Check status using get_subagent_status."
+          message: "Sub-agent started successfully as a tracked background task. Check status using get_agent_task or list_agent_tasks."
         };
       }
       
       const instance = await instancePromise;
       return {
         agentId: instance.id,
+        taskId: instance.taskId,
         agentType: args.agentType,
         status: instance.status,
         result: instance.result,
@@ -528,9 +629,34 @@ export async function executeToolCall(
         const allAgents = orchestrator.getAll();
         const count = args.agents.length;
         const latest = allAgents.slice(-count);
+        const parallelTask = taskManager.create({
+          kind: "parallel_subagents",
+          title: `Parallel sub-agents: ${args.agents.map((a: any) => a.agentType).join(", ")}`.slice(0, 160),
+          agentIds: latest.map((inst: any) => inst.id),
+          metadata: { childTaskIds: latest.map((inst: any) => inst.taskId).filter(Boolean) },
+          progress: "Parallel sub-agents running",
+        });
+        const childTaskIds = (parallelTask.metadata?.childTaskIds || []) as string[];
+        const checkParallelDone = () => {
+          const children = childTaskIds.map((id) => taskManager.get(id)).filter(Boolean);
+          if (children.length !== childTaskIds.length) return;
+          const allDone = children.every((task: any) => ["completed", "error", "cancelled"].includes(task.status));
+          if (!allDone) return;
+          const hasError = children.some((task: any) => task.status === "error");
+          const hasCancel = children.some((task: any) => task.status === "cancelled");
+          taskManager.update(parallelTask.id, {
+            status: hasError ? "error" : hasCancel ? "cancelled" : "completed",
+            progress: "Parallel sub-agents finished",
+            result: children.map((task: any) => ({ id: task.id, status: task.status, result: task.result, error: task.error })),
+          });
+          window.removeEventListener("agent-task-completed", checkParallelDone);
+        };
+        window.addEventListener("agent-task-completed", checkParallelDone);
         return {
+          taskId: parallelTask.id,
           agents: latest.map(inst => ({
             agentId: inst.id,
+            taskId: inst.taskId,
             agentType: inst.definition.name,
             status: "running",
           })),
@@ -543,6 +669,7 @@ export async function executeToolCall(
       return {
         agents: instances.map(inst => ({
           agentId: inst.id,
+          taskId: inst.taskId,
           agentType: inst.definition.name,
           status: inst.status,
           result: inst.result,
@@ -580,6 +707,123 @@ export async function executeToolCall(
           startedAt: inst.startedAt,
         }))
       };
+    }
+    case "start_background_command": {
+      const start = await req("/api/debug/start", { command: args.command });
+      if (!start?.success) return start;
+
+      const task = taskManager.create({
+        kind: "debug_command",
+        title: (args.title || `Command: ${args.command}`).slice(0, 160),
+        debugSessionId: start.sessionId,
+        progress: "Command started",
+        metadata: { command: args.command, pid: start.pid, workspaceId },
+      });
+
+      const poll = async () => {
+        try {
+          const logs = await req("/api/debug/logs", { sessionId: start.sessionId });
+          const current = taskManager.get(task.id);
+          if (!current || current.status !== "running") return;
+
+          taskManager.update(task.id, {
+            progress: logs.status || "running",
+            result: {
+              status: logs.status,
+              exitCode: logs.exitCode,
+              logs: typeof logs.logs === "string" && logs.logs.length > 20000 ? logs.logs.slice(-20000) : logs.logs,
+            },
+          });
+
+          if (logs.status === "running") {
+            window.setTimeout(poll, 2000);
+          } else {
+            taskManager.update(task.id, {
+              status: logs.status === "exited" ? "completed" : "error",
+              progress: logs.status === "exited" ? "Completed" : "Failed",
+            });
+          }
+        } catch (err: any) {
+          const current = taskManager.get(task.id);
+          if (current?.status === "running") {
+            taskManager.update(task.id, { status: "error", error: err.message, progress: "Failed to poll logs" });
+          }
+        }
+      };
+      window.setTimeout(poll, 1000);
+
+      return {
+        success: true,
+        taskId: task.id,
+        debugSessionId: start.sessionId,
+        pid: start.pid,
+        status: "running",
+        message: "Background command started as a tracked task. Use get_agent_task to inspect logs.",
+      };
+    }
+    case "list_agent_tasks": {
+      const includeCompleted = args.includeCompleted !== false;
+      const tasks = taskManager.list().filter(task =>
+        includeCompleted || !["completed", "error", "cancelled"].includes(task.status)
+      );
+      return { success: true, tasks };
+    }
+    case "get_agent_task": {
+      const task = taskManager.get(args.taskId);
+      if (!task) return { error: `Task ${args.taskId} not found.` };
+
+      if (task.kind === "debug_command" && task.debugSessionId) {
+        const logs = await req("/api/debug/logs", { sessionId: task.debugSessionId });
+        taskManager.update(task.id, {
+          progress: logs.status || task.progress,
+          result: {
+            status: logs.status,
+            exitCode: logs.exitCode,
+            logs: typeof logs.logs === "string" && logs.logs.length > 20000 ? logs.logs.slice(-20000) : logs.logs,
+          },
+          ...(logs.status && logs.status !== "running" ? { status: logs.status === "exited" ? "completed" : "error" } : {}),
+        });
+      }
+
+      return { success: true, task: taskManager.get(args.taskId) };
+    }
+    case "cancel_agent_task": {
+      const task = taskManager.get(args.taskId);
+      if (!task) return { error: `Task ${args.taskId} not found.` };
+
+      if (task.kind === "subagent" && task.agentId) {
+        const orchestrator = (window as any).__agentOrchestrator;
+        orchestrator?.killAgent(task.agentId);
+        taskManager.update(task.id, { status: "cancelled", progress: "Cancelled" });
+        return { success: true, task: taskManager.get(task.id) };
+      }
+
+      if (task.kind === "parallel_subagents" && task.agentIds?.length) {
+        const orchestrator = (window as any).__agentOrchestrator;
+        task.agentIds.forEach((agentId) => orchestrator?.killAgent(agentId));
+        taskManager.update(task.id, { status: "cancelled", progress: "Cancelled" });
+        return { success: true, task: taskManager.get(task.id) };
+      }
+
+      if (task.kind === "debug_command" && task.debugSessionId) {
+        const result = await req("/api/debug/kill", { sessionId: task.debugSessionId });
+        if (result?.error && task.metadata?.pid) {
+          const pidKill = await req("/api/cmd/kill", { type: "background", id: task.metadata.pid });
+          taskManager.update(task.id, { status: "cancelled", progress: "Cancelled", result: pidKill });
+          return { success: true, task: taskManager.get(task.id) };
+        }
+        taskManager.update(task.id, { status: "cancelled", progress: "Cancelled", result });
+        return { success: true, task: taskManager.get(task.id) };
+      }
+
+      if (task.kind === "debug_command" && task.metadata?.pid) {
+        const result = await req("/api/cmd/kill", { type: "background", id: task.metadata.pid });
+        taskManager.update(task.id, { status: "cancelled", progress: "Cancelled", result });
+        return { success: true, task: taskManager.get(task.id) };
+      }
+
+      taskManager.update(task.id, { status: "cancelled", progress: "Cancelled" });
+      return { success: true, task: taskManager.get(task.id) };
     }
     default:
       return { error: `Unknown tool: ${name}` };

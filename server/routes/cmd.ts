@@ -1,8 +1,9 @@
 import { Router } from 'express';
 import { spawn } from 'child_process';
-import { existsSync } from 'fs';
 import { safePath } from '../utils/workspace';
 import { terminalSessions } from '../websocket/terminal';
+import { isProcessAlive, isProcessNotFoundError, killProcessTree } from '../utils/process';
+import { resolveShell } from '../utils/shell';
 
 const router = Router();
 export const activeProcesses = new Set<any>();
@@ -11,7 +12,9 @@ export function killAllBackgroundProcesses() {
   for (const child of activeProcesses) {
     try {
       if (child.pid && !child.killed) {
-        child.kill('SIGKILL');
+        killProcessTree(child.pid).catch(() => {
+          try { child.kill('SIGKILL'); } catch (_) {}
+        });
       }
     } catch (_) {}
   }
@@ -26,17 +29,7 @@ router.post('/run', async (req, res) => {
     
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     
-    let selectedShell: string | boolean = true;
-    if (process.platform !== 'win32') {
-      const envShell = process.env.SHELL || '';
-      if (envShell && existsSync(envShell)) {
-        selectedShell = envShell;
-      } else if (existsSync('/bin/bash')) {
-        selectedShell = '/bin/bash';
-      } else if (existsSync('/bin/sh')) {
-        selectedShell = '/bin/sh';
-      }
-    }
+    const selectedShell = resolveShell();
 
     let isBackground = false;
     let accumulatedOutput = '';
@@ -60,7 +53,7 @@ router.post('/run', async (req, res) => {
         ...process.env,
         PATH: process.env.PATH || '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
       },
-      detached: false,
+      detached: process.platform !== 'win32',
       stdio: ['pipe', 'pipe', 'pipe']
     });
     (child as any).command = command;
@@ -70,7 +63,9 @@ router.post('/run', async (req, res) => {
       clearTimeout(timeoutTimer);
       try {
         if (!isBackground && child.pid && !child.killed) {
-          child.kill();
+          killProcessTree(child.pid, 'SIGTERM').catch(() => {
+            try { child.kill('SIGTERM'); } catch (_) {}
+          });
         }
       } catch (_) {}
     });
@@ -123,23 +118,27 @@ router.post('/run', async (req, res) => {
 
 router.get('/active', (req, res) => {
   const activeTerminals = Array.from(terminalSessions.entries()).map(([key, session]) => {
-    const [workspaceId, tabId] = key.split('_');
     return {
       type: 'terminal',
       id: key,
-      workspaceId,
-      tabId,
+      workspaceId: session.workspaceId,
+      tabId: session.tabId,
       pid: session.bash.pid,
     };
   });
 
-  const activeCmds = Array.from(activeProcesses).map((child) => {
-    return {
+  const activeCmds = Array.from(activeProcesses).flatMap((child) => {
+    if (!child.pid || !isProcessAlive(child.pid)) {
+      activeProcesses.delete(child);
+      return [];
+    }
+
+    return [{
       type: 'background',
       id: child.pid,
       pid: child.pid,
       command: (child as any).command || 'Command',
-    };
+    }];
   });
 
   res.json({
@@ -148,7 +147,7 @@ router.get('/active', (req, res) => {
   });
 });
 
-router.post('/kill', (req, res) => {
+router.post('/kill', async (req, res) => {
   const { type, id } = req.body;
   if (!type || id === undefined) {
     return res.status(400).json({ error: 'type and id are required' });
@@ -160,7 +159,7 @@ router.post('/kill', (req, res) => {
       try {
         // Kill the process group for spawned shells
         try {
-          process.kill(-session.bash.pid, 'SIGKILL');
+          await killProcessTree(session.bash.pid);
         } catch (_) {
           session.bash.kill('SIGKILL');
         }
@@ -180,7 +179,7 @@ router.post('/kill', (req, res) => {
     for (const child of activeProcesses) {
       if (child.pid === pid) {
         try {
-          child.kill('SIGKILL');
+          await killProcessTree(child.pid);
         } catch (e: any) {
           console.error(`Error killing background process: ${e.message}`);
         }
@@ -195,9 +194,12 @@ router.post('/kill', (req, res) => {
     } else {
       // Try direct kill if not found in map (orphaned process)
       try {
-        process.kill(pid, 'SIGKILL');
+        await killProcessTree(pid);
         return res.json({ success: true, message: `Process ${pid} killed.` });
       } catch (e: any) {
+        if (isProcessNotFoundError(e)) {
+          return res.json({ success: true, alreadyStopped: true, message: `Process ${pid} is already stopped.` });
+        }
         return res.status(404).json({ error: `Process ${pid} not found or cannot be killed: ${e.message}` });
       }
     }

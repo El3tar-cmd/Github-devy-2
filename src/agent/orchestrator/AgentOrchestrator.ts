@@ -3,6 +3,7 @@ import { AGENT_REGISTRY } from "./AgentRegistry";
 import { runSubAgent } from "./SubAgentRunner";
 import { MessageBus } from "./MessageBus";
 import { Settings } from "../../types";
+import { getAgentTaskManager } from "./TaskManager";
 
 export class AgentOrchestrator {
   private activeAgents: Map<string, SubAgentInstance> = new Map();
@@ -31,7 +32,18 @@ export class AgentOrchestrator {
       startedAt: Date.now()
     };
 
+    const taskManager = getAgentTaskManager();
+    const taskTitle = `${definition.name}: ${task}`.slice(0, 160);
+    const taskRecord = taskManager.create({
+      kind: "subagent",
+      title: taskTitle,
+      agentId: "",
+      metadata: { typeName, requestedTask: task },
+    });
+
     this.activeAgents.set(instance.id, instance);
+    instance.taskId = taskRecord.id;
+    taskManager.update(taskRecord.id, { agentId: instance.id });
     const ac = new AbortController();
     this.abortControllers.set(instance.id, ac);
 
@@ -41,6 +53,7 @@ export class AgentOrchestrator {
         ac.abort();
         instance.status = "error";
         instance.result = `Timeout: Sub-agent execution exceeded the limit of ${timeoutSeconds} seconds.`;
+        taskManager.update(taskRecord.id, { status: "error", error: instance.result, progress: "Timed out" });
         onProgress?.(instance.id, "timeout");
       }, timeoutSeconds * 1000);
     }
@@ -55,6 +68,7 @@ export class AgentOrchestrator {
         executeToolCallFn,
         (status, msgs) => {
           instance.messages = msgs;
+          taskManager.update(taskRecord.id, { progress: status, metadata: { ...taskManager.get(taskRecord.id)?.metadata, messageCount: msgs.length } });
           onProgress?.(instance.id, status);
         },
         ac.signal,
@@ -65,11 +79,15 @@ export class AgentOrchestrator {
         instance.status = "completed";
         instance.result = result;
         instance.messages = messages;
+        instance.completedAt = Date.now();
+        taskManager.update(taskRecord.id, { status: "completed", result, progress: "Completed" });
       }
     } catch (err: any) {
       if (instance.status === "running") {
         instance.status = "error";
         instance.result = `Error: ${err.message}`;
+        instance.completedAt = Date.now();
+        taskManager.update(taskRecord.id, { status: "error", error: instance.result, progress: "Failed" });
       }
     } finally {
       if (timeoutId) clearTimeout(timeoutId);
@@ -97,7 +115,12 @@ export class AgentOrchestrator {
     ac?.abort();
     this.abortControllers.delete(agentId);
     const instance = this.activeAgents.get(agentId);
-    if (instance) instance.status = "error";
+    if (instance) {
+      instance.status = "error";
+      if (instance.taskId) {
+        getAgentTaskManager().update(instance.taskId, { status: "cancelled", progress: "Cancelled by user" });
+      }
+    }
   }
 
   killAll() {

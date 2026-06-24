@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { Settings } from "../types";
 import { fetchOllamaModels, fetchLmStudioModels } from "../ollama";
 import { useAgentSessions } from "./useAgentSessions";
@@ -21,13 +21,39 @@ export function useAgent(
     startNewChat,
     switchSession,
     deleteSession,
-  } = useAgentSessions();
+  } = useAgentSessions(workspaceId);
 
   const [isRunning, setIsRunning] = useState(false);
   const [models, setModels] = useState<string[]>([]);
   const [modelsError, setModelsError] = useState<string | null>(null);
 
   const abortControllerRef = useRef<AbortController | null>(null);
+  const currentSessionIdRef = useRef(currentSessionId);
+
+  useEffect(() => {
+    currentSessionIdRef.current = currentSessionId;
+  }, [currentSessionId]);
+
+  useEffect(() => {
+    const onTaskCompleted = (event: Event) => {
+      const task = (event as CustomEvent).detail;
+      if (!task?.id) return;
+
+      const targetId = currentSessionIdRef.current;
+      const updater = createSessionUpdater(targetId);
+      updater((prev) => [
+        ...prev,
+        {
+          id: Math.random().toString(36),
+          role: "system" as const,
+          content: `Background task ${task.id} finished with status "${task.status}". Use get_agent_task with taskId "${task.id}" to inspect the output.`,
+        },
+      ]);
+    };
+
+    window.addEventListener("agent-task-completed", onTaskCompleted);
+    return () => window.removeEventListener("agent-task-completed", onTaskCompleted);
+  }, [createSessionUpdater]);
 
   const abortAgent = () => {
     if (abortControllerRef.current) {

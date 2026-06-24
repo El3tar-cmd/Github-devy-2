@@ -55,6 +55,10 @@ app.use('/api/rag', ragRouter);
 app.use('/api/ast', astRouter);
 app.use('/api/sandbox', sandboxRouter);
 
+app.use('/api', (req, res) => {
+  res.status(404).json({ error: `API route not found: ${req.method} ${req.originalUrl}` });
+});
+
 
 // Setup Vite for Dev / Static files for Prod
 async function startServer() {

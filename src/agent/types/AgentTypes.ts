@@ -19,6 +19,7 @@ export interface SubAgentInstance {
   result?: string;               // Final output
   startedAt: number;
   completedAt?: number;
+  taskId?: string;
 }
 
 export interface AgentMessage {

@@ -111,7 +111,7 @@ export const SidebarLayout: React.FC<SidebarLayoutProps> = ({
               {sessions.map((s) => (
                 <div
                   key={s.id}
-                  className={`group flex items-center justify-between p-3 rounded-xl border transition-colors cursor-pointer ${
+                  className={`group flex items-center justify-between gap-2 p-3 rounded-xl border transition-colors cursor-pointer ${
                     s.id === currentSessionId
                       ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400 shadow-sm"
                       : "bg-[#1e1e24] border-white/5 text-slate-400 hover:text-slate-200 hover:bg-[#2a2a32]"
@@ -121,7 +121,7 @@ export const SidebarLayout: React.FC<SidebarLayoutProps> = ({
                     if (window.innerWidth < 768) setSidebarOpen(false);
                   }}
                 >
-                  <div className="flex items-center gap-3 overflow-hidden">
+                  <div className="flex min-w-0 items-center gap-3 overflow-hidden">
                     <MessageSquare className="w-4 h-4 shrink-0 opacity-70" />
                     <span className="text-sm truncate">
                       {s.title || "Empty chat"}
@@ -132,10 +132,12 @@ export const SidebarLayout: React.FC<SidebarLayoutProps> = ({
                       e.stopPropagation();
                       deleteSession(s.id);
                     }}
-                    className="opacity-0 group-hover:opacity-100 p-1.5 hover:text-rose-400 text-slate-500 hover:bg-rose-500/10 rounded-md transition-all shrink-0"
-                    title="Delete conversation"
+                    className="inline-flex shrink-0 items-center gap-1 rounded-md border border-rose-500/10 bg-rose-500/5 px-2 py-1 text-[11px] font-medium text-rose-400 transition-colors hover:bg-rose-500/15 hover:text-rose-300"
+                    title="Delete Chat"
+                    aria-label={`Delete chat ${s.title || "Empty chat"}`}
                   >
                     <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete</span>
                   </button>
                 </div>
               ))}

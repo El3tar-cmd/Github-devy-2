@@ -27,7 +27,7 @@ export const AGENT_REGISTRY: Record<string, SubAgentDefinition> = {
 - Use replace_in_file for targeted edits, write_file for new files.
 - Always verify your changes by reading the file after editing.
 - Follow the project's existing code style and conventions.`,
-    allowedTools: ["read_file", "read_file_lines", "write_file", "replace_in_file", "list_directory_files", "search_content", "run_command", "manage_packages", "sequential_thinking"],
+    allowedTools: ["read_file", "read_file_lines", "write_file", "replace_in_file", "create_directory", "rename_path", "delete_path", "list_directory_files", "search_content", "run_command", "manage_packages", "sequential_thinking", "list_agent_tasks", "get_agent_task"],
     maxIterations: 25,
   },
 
@@ -57,7 +57,7 @@ export const AGENT_REGISTRY: Record<string, SubAgentDefinition> = {
 - Trace the root cause through the codebase.
 - Provide exact fixes with file paths and line numbers.
 - Test your fixes by running commands when possible.`,
-    allowedTools: ["read_file", "read_file_lines", "write_file", "replace_in_file", "list_directory_files", "search_content", "run_command", "sequential_thinking", "browser_get_state"],
+    allowedTools: ["read_file", "read_file_lines", "write_file", "replace_in_file", "create_directory", "rename_path", "delete_path", "list_directory_files", "search_content", "run_command", "start_background_command", "debug_start", "debug_logs", "debug_kill", "debug_sessions", "list_active_processes", "kill_process", "sequential_thinking", "browser_get_state", "list_agent_tasks", "get_agent_task", "cancel_agent_task"],
     maxIterations: 20,
   },
 
@@ -73,7 +73,7 @@ export const AGENT_REGISTRY: Record<string, SubAgentDefinition> = {
 - Estimate complexity for each step.
 - Identify dependencies between steps.
 - Write the plan to .github-devy/plan.md and tasks to .github-devy/tasks.md.`,
-    allowedTools: ["read_file", "read_file_lines", "list_directory_files", "search_content", "write_file", "sequential_thinking"],
+    allowedTools: ["read_file", "read_file_lines", "list_directory_files", "search_content", "write_file", "create_directory", "sequential_thinking", "list_agent_tasks", "get_agent_task"],
     maxIterations: 10,
   },
 };

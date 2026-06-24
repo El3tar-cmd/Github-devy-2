@@ -3,6 +3,15 @@ import { ChatMessage, ChatSession } from "../types";
 
 const MAX_STORED_SESSIONS = 20;
 const MAX_TOOL_RESULT_CHARS = 20000;
+const DEFAULT_WORKSPACE_KEY = "__default__";
+
+function getWorkspaceStorageKey(workspaceId: string, key: string) {
+  return `${key}_${workspaceId || DEFAULT_WORKSPACE_KEY}`;
+}
+
+function generateSessionId() {
+  return Math.random().toString(36).substring(7);
+}
 
 function sanitizeToolResult(result?: string) {
   if (!result) return result;
@@ -38,11 +47,12 @@ function sanitizeSessionsForStorage(sessions: ChatSession[]) {
   }));
 }
 
-export function useAgentSessions() {
+export function useAgentSessions(workspaceId: string) {
   // Session Persistence
-  const getInitialSessions = () => {
+  const getInitialSessions = (targetWorkspaceId = workspaceId) => {
     if (typeof window === "undefined") return [];
-    const saved = localStorage.getItem("agent_sessions");
+    const scopedKey = getWorkspaceStorageKey(targetWorkspaceId, "agent_sessions");
+    const saved = localStorage.getItem(scopedKey) || localStorage.getItem("agent_sessions");
     if (saved) {
       try {
         return JSON.parse(saved);
@@ -53,25 +63,48 @@ export function useAgentSessions() {
 
   const [sessions, setSessions] = useState<ChatSession[]>(getInitialSessions);
 
-  const [currentSessionId, setCurrentSessionId] = useState<string>(() => {
+  const getInitialCurrentSessionId = (targetWorkspaceId = workspaceId) => {
     if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("current_session_id");
+      const scopedKey = getWorkspaceStorageKey(targetWorkspaceId, "current_session_id");
+      const saved = localStorage.getItem(scopedKey) || localStorage.getItem("current_session_id");
       if (saved) return saved;
     }
-    return Math.random().toString(36).substring(7);
-  });
+    return generateSessionId();
+  };
+
+  const [currentSessionId, setCurrentSessionId] = useState<string>(getInitialCurrentSessionId);
+  const previousWorkspaceIdRef = useRef(workspaceId);
+  const skipNextSessionPersistRef = useRef(false);
+  const skipNextCurrentPersistRef = useRef(false);
 
   useEffect(() => {
+    if (previousWorkspaceIdRef.current === workspaceId) return;
+
+    previousWorkspaceIdRef.current = workspaceId;
+    skipNextSessionPersistRef.current = true;
+    skipNextCurrentPersistRef.current = true;
+    setSessions(getInitialSessions(workspaceId));
+    setCurrentSessionId(getInitialCurrentSessionId(workspaceId));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspaceId]);
+
+  useEffect(() => {
+    if (skipNextSessionPersistRef.current) {
+      skipNextSessionPersistRef.current = false;
+      return;
+    }
+
+    const scopedKey = getWorkspaceStorageKey(workspaceId, "agent_sessions");
     try {
       if (sessions.length > 0) {
-        localStorage.setItem("agent_sessions", JSON.stringify(sanitizeSessionsForStorage(sessions)));
+        localStorage.setItem(scopedKey, JSON.stringify(sanitizeSessionsForStorage(sessions)));
       } else {
-        localStorage.removeItem("agent_sessions");
+        localStorage.removeItem(scopedKey);
       }
     } catch (err: any) {
       if (err?.name === "QuotaExceededError") {
         try {
-          localStorage.setItem("agent_sessions", JSON.stringify(sanitizeSessionsForStorage(sessions.slice(0, 5))));
+          localStorage.setItem(scopedKey, JSON.stringify(sanitizeSessionsForStorage(sessions.slice(0, 5))));
         } catch (fallbackErr) {
           console.warn("Failed to persist agent sessions after trimming.", fallbackErr);
         }
@@ -79,11 +112,15 @@ export function useAgentSessions() {
         console.warn("Failed to persist agent sessions.", err);
       }
     }
-  }, [sessions]);
+  }, [sessions, workspaceId]);
 
   useEffect(() => {
-    localStorage.setItem("current_session_id", currentSessionId);
-  }, [currentSessionId]);
+    if (skipNextCurrentPersistRef.current) {
+      skipNextCurrentPersistRef.current = false;
+      return;
+    }
+    localStorage.setItem(getWorkspaceStorageKey(workspaceId, "current_session_id"), currentSessionId);
+  }, [currentSessionId, workspaceId]);
 
   // Keep a ref to sessions for async closures (avoids stale closure bug)
   const sessionsRef = useRef<ChatSession[]>(sessions);
@@ -98,6 +135,22 @@ export function useAgentSessions() {
     updatedAt: Date.now(),
   };
   const messages = currentSession.messages;
+
+  const createEmptySession = useCallback((sessionId: string) => {
+    setSessions((prev) => {
+      const existing = prev.find((s) => s.id === sessionId);
+      if (existing) return prev;
+
+      const newSession: ChatSession = {
+        id: sessionId,
+        title: "New Chat",
+        messages: [],
+        updatedAt: Date.now(),
+      };
+
+      return [newSession, ...prev].sort((a, b) => b.updatedAt - a.updatedAt);
+    });
+  }, []);
 
   // Safe Session Updater to avoid async closures referencing old IDs point to the wrong session
   const createSessionUpdater = useCallback((targetId: string) => {
@@ -147,19 +200,42 @@ export function useAgentSessions() {
   const clearMessages = () => setMessagesForCurrent([]);
 
   const startNewChat = () => {
-    setCurrentSessionId(Math.random().toString(36).substring(7));
+    const newSessionId = generateSessionId();
+    createEmptySession(newSessionId);
+    setCurrentSessionId(newSessionId);
   };
 
   const switchSession = (id: string) => {
+    if (!sessionsRef.current.some((s) => s.id === id)) {
+      createEmptySession(id);
+    }
     setCurrentSessionId(id);
   };
 
-  const deleteSession = (id: string) => {
-    setSessions((prev) => prev.filter((s) => s.id !== id));
-    if (currentSessionId === id) {
-      setCurrentSessionId(Math.random().toString(36).substring(7));
+  const deleteSession = useCallback((id: string) => {
+    const remaining = sessionsRef.current.filter((s) => s.id !== id);
+
+    if (remaining.length === 0) {
+      const replacementId = generateSessionId();
+      const replacementSession: ChatSession = {
+        id: replacementId,
+        title: "New Chat",
+        messages: [],
+        updatedAt: Date.now(),
+      };
+
+      setSessions([replacementSession]);
+      if (currentSessionId === id) {
+        setCurrentSessionId(replacementId);
+      }
+      return;
     }
-  };
+
+    setSessions(remaining);
+    if (currentSessionId === id) {
+      setCurrentSessionId(remaining[0].id);
+    }
+  }, [currentSessionId]);
 
   return {
     sessions,

@@ -305,6 +305,236 @@ export const TOOLS_SCHEMA = [
   {
     type: "function",
     function: {
+      name: "git_history",
+      description: "List recent Git commits with hash, author, date, and subject",
+      parameters: {
+        type: "object",
+        properties: {
+          limit: { type: "number", description: "Maximum commits to return, default 30, max 200" }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "git_branches",
+      description: "List local and remote Git branches and identify the current branch",
+      parameters: {
+        type: "object",
+        properties: {
+          includeRemote: { type: "boolean", description: "Include remote branches. Defaults to true." }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "git_checkout",
+      description: "Switch Git branches or create a new branch from an optional start point",
+      parameters: {
+        type: "object",
+        properties: {
+          branch: { type: "string", description: "Branch name to switch to or create" },
+          create: { type: "boolean", description: "Create the branch before switching" },
+          startPoint: { type: "string", description: "Optional ref to create the branch from" }
+        },
+        required: ["branch"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "git_fetch",
+      description: "Fetch updates from a remote repository",
+      parameters: {
+        type: "object",
+        properties: {
+          remote: { type: "string", description: "Remote name, default origin" },
+          prune: { type: "boolean", description: "Prune deleted remote refs, default true" }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "git_merge",
+      description: "Merge a Git ref into the current branch",
+      parameters: {
+        type: "object",
+        properties: {
+          ref: { type: "string", description: "Branch, tag, or commit to merge" },
+          noFf: { type: "boolean", description: "Use --no-ff" }
+        },
+        required: ["ref"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "git_remotes",
+      description: "List configured Git remotes",
+      parameters: { type: "object", properties: {} }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "git_remote",
+      description: "Add, update, or remove a Git remote",
+      parameters: {
+        type: "object",
+        properties: {
+          action: { type: "string", enum: ["add", "set-url", "remove"], description: "Remote operation" },
+          name: { type: "string", description: "Remote name, default origin" },
+          url: { type: "string", description: "Remote URL, required except for remove" }
+        },
+        required: ["action"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "git_stash",
+      description: "List, create, apply, pop, or drop Git stashes",
+      parameters: {
+        type: "object",
+        properties: {
+          action: { type: "string", enum: ["list", "push", "pop", "apply", "drop"], description: "Stash operation" },
+          message: { type: "string", description: "Message when pushing a stash" },
+          stashRef: { type: "string", description: "Optional stash reference such as stash@{0}" }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "git_tags",
+      description: "List, create, or delete Git tags",
+      parameters: {
+        type: "object",
+        properties: {
+          action: { type: "string", enum: ["list", "create", "delete"], description: "Tag operation" },
+          name: { type: "string", description: "Tag name for create/delete" },
+          message: { type: "string", description: "Annotated tag message" },
+          ref: { type: "string", description: "Optional commit/ref to tag" }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "github_actions_runs",
+      description: "List GitHub Actions workflow runs for the current GitHub repo or a provided owner/repo",
+      parameters: {
+        type: "object",
+        properties: {
+          owner: { type: "string", description: "GitHub owner. Optional if origin remote is GitHub." },
+          repo: { type: "string", description: "GitHub repository. Optional if origin remote is GitHub." },
+          branch: { type: "string", description: "Optional branch filter" },
+          workflowId: { type: "string", description: "Optional workflow file name or workflow id" },
+          limit: { type: "number", description: "Maximum runs to return, default 20, max 100" },
+          token: { type: "string", description: "Optional GitHub token for private repositories" }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "github_actions_run",
+      description: "Get details for one GitHub Actions workflow run",
+      parameters: {
+        type: "object",
+        properties: {
+          owner: { type: "string" },
+          repo: { type: "string" },
+          runId: { type: "number", description: "GitHub Actions run id" },
+          token: { type: "string", description: "Optional GitHub token for private repositories" }
+        },
+        required: ["runId"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "github_actions_jobs",
+      description: "List jobs for a GitHub Actions workflow run",
+      parameters: {
+        type: "object",
+        properties: {
+          owner: { type: "string" },
+          repo: { type: "string" },
+          runId: { type: "number", description: "GitHub Actions run id" },
+          token: { type: "string", description: "Optional GitHub token for private repositories" }
+        },
+        required: ["runId"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "github_actions_logs",
+      description: "Fetch logs for a GitHub Actions run or job. Use jobId for readable job logs; run logs may be a zip payload.",
+      parameters: {
+        type: "object",
+        properties: {
+          owner: { type: "string" },
+          repo: { type: "string" },
+          runId: { type: "number", description: "Workflow run id" },
+          jobId: { type: "number", description: "Workflow job id" },
+          token: { type: "string", description: "Optional GitHub token for private repositories" }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "github_actions_artifacts",
+      description: "List artifacts produced by a GitHub Actions workflow run, such as APK zip artifacts",
+      parameters: {
+        type: "object",
+        properties: {
+          owner: { type: "string" },
+          repo: { type: "string" },
+          runId: { type: "number", description: "GitHub Actions run id" },
+          token: { type: "string", description: "Optional GitHub token for private repositories" }
+        },
+        required: ["runId"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "github_actions_download_artifact",
+      description: "Download a GitHub Actions artifact zip into .github-devy/artifacts in the workspace",
+      parameters: {
+        type: "object",
+        properties: {
+          owner: { type: "string" },
+          repo: { type: "string" },
+          artifactId: { type: "number", description: "Artifact id from github_actions_artifacts" },
+          fileName: { type: "string", description: "Optional zip file name to save as" },
+          token: { type: "string", description: "Optional GitHub token for private repositories" }
+        },
+        required: ["artifactId"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
       name: "manage_packages",
       description: "Install, uninstall, or update npm packages in the workspace project",
       parameters: {
@@ -325,6 +555,190 @@ export const TOOLS_SCHEMA = [
           }
         },
         required: ["action"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "create_directory",
+      description: "Create a directory in the workspace, including parent directories when needed",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "Workspace-relative directory path to create" }
+        },
+        required: ["path"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "rename_path",
+      description: "Rename or move a file or directory within the workspace",
+      parameters: {
+        type: "object",
+        properties: {
+          oldPath: { type: "string", description: "Current workspace-relative file or directory path" },
+          newPath: { type: "string", description: "New workspace-relative file or directory path" }
+        },
+        required: ["oldPath", "newPath"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "delete_path",
+      description: "Delete a file or directory from the workspace",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "Workspace-relative file or directory path to delete" }
+        },
+        required: ["path"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "database_list",
+      description: "Find SQLite database files in the workspace",
+      parameters: { type: "object", properties: {} }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "database_tables",
+      description: "List user tables in a SQLite database file",
+      parameters: {
+        type: "object",
+        properties: {
+          dbPath: { type: "string", description: "Workspace-relative SQLite database path" }
+        },
+        required: ["dbPath"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "database_query",
+      description: "Run a SQL query against a SQLite database file and return rows or write results",
+      parameters: {
+        type: "object",
+        properties: {
+          dbPath: { type: "string", description: "Workspace-relative SQLite database path" },
+          query: { type: "string", description: "SQL query to execute" }
+        },
+        required: ["dbPath", "query"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "debug_start",
+      description: "Start a long-running debug command in the workspace and return a session id",
+      parameters: {
+        type: "object",
+        properties: {
+          command: { type: "string", description: "Command to run for debugging, such as a dev server or test watcher" }
+        },
+        required: ["command"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "debug_logs",
+      description: "Read logs and status for a debug session",
+      parameters: {
+        type: "object",
+        properties: {
+          sessionId: { type: "string", description: "Debug session id returned by debug_start" }
+        },
+        required: ["sessionId"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "debug_kill",
+      description: "Kill a running debug session and its child process tree",
+      parameters: {
+        type: "object",
+        properties: {
+          sessionId: { type: "string", description: "Debug session id to kill" }
+        },
+        required: ["sessionId"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "debug_sessions",
+      description: "List active and completed debug sessions",
+      parameters: { type: "object", properties: {} }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_active_processes",
+      description: "List active interactive terminal sessions and background command processes",
+      parameters: { type: "object", properties: {} }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "kill_process",
+      description: "Kill an active terminal session or background command process and its process tree",
+      parameters: {
+        type: "object",
+        properties: {
+          type: { type: "string", enum: ["terminal", "background"], description: "Process type from list_active_processes" },
+          id: { type: "string", description: "Terminal session id or background process pid from list_active_processes" }
+        },
+        required: ["type", "id"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "sandbox_logs",
+      description: "Read logs captured by the local sandbox mock providers for Stripe, Twilio, Auth0, and webhooks",
+      parameters: { type: "object", properties: {} }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "sandbox_clear_logs",
+      description: "Clear logs captured by the local sandbox mock providers",
+      parameters: { type: "object", properties: {} }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "sandbox_trigger_webhook",
+      description: "Send a mock webhook event payload to an application endpoint",
+      parameters: {
+        type: "object",
+        properties: {
+          webhookUrl: { type: "string", description: "Absolute or local URL that should receive the webhook" },
+          eventType: { type: "string", description: "Mock event type, such as payment_intent.succeeded" }
+        },
+        required: ["webhookUrl", "eventType"]
       }
     }
   },
@@ -476,6 +890,62 @@ export const TOOLS_SCHEMA = [
       parameters: {
         type: "object",
         properties: {}
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "start_background_command",
+      description: "Start a long-running command as a tracked background task. Use this for servers, watchers, builds, or tests that should continue while the main agent stops.",
+      parameters: {
+        type: "object",
+        properties: {
+          command: { type: "string", description: "Workspace command to run in the background" },
+          title: { type: "string", description: "Optional short human-readable task title" }
+        },
+        required: ["command"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_agent_tasks",
+      description: "List tracked background tasks, including background sub-agents and long-running commands.",
+      parameters: {
+        type: "object",
+        properties: {
+          includeCompleted: { type: "boolean", description: "Include completed/error/cancelled tasks. Defaults to true." }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_agent_task",
+      description: "Inspect one tracked background task and return its status, output, result, or linked logs.",
+      parameters: {
+        type: "object",
+        properties: {
+          taskId: { type: "string", description: "Task id returned by a background task tool" }
+        },
+        required: ["taskId"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "cancel_agent_task",
+      description: "Cancel a tracked background task. Sub-agents are aborted; debug command tasks kill their process tree.",
+      parameters: {
+        type: "object",
+        properties: {
+          taskId: { type: "string", description: "Task id to cancel" }
+        },
+        required: ["taskId"]
       }
     }
   },

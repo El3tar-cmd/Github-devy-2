@@ -1,8 +1,9 @@
 import { Router } from 'express';
 import { spawn } from 'child_process';
-import { existsSync } from 'fs';
 import { safePath } from '../utils/workspace';
 import { notifyDebugLog } from '../websocket/events';
+import { killProcessTree } from '../utils/process';
+import { resolveShell } from '../utils/shell';
 
 const router = Router();
 
@@ -25,21 +26,12 @@ router.post('/start', async (req, res) => {
     const { wDir } = await safePath(workspaceId, '.');
     const sessionId = `dbg_${Date.now()}_${++debugSessionCounter}`;
     
-    let selectedShell: string | boolean = true;
-    if (process.platform !== 'win32') {
-      const envShell = process.env.SHELL || '';
-      if (envShell && existsSync(envShell)) {
-        selectedShell = envShell;
-      } else if (existsSync('/bin/bash')) {
-        selectedShell = '/bin/bash';
-      } else if (existsSync('/bin/sh')) {
-        selectedShell = '/bin/sh';
-      }
-    }
+    const selectedShell = resolveShell();
 
     const child = spawn(command, {
       shell: selectedShell,
       cwd: wDir,
+      detached: process.platform !== 'win32',
       env: {
         ...process.env,
         PATH: process.env.PATH || '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
@@ -97,19 +89,15 @@ router.post('/logs', (req, res) => {
   });
 });
 
-router.post('/kill', (req, res) => {
+router.post('/kill', async (req, res) => {
   const { sessionId } = req.body;
   const session = debugSessions.get(sessionId);
   if (!session) return res.status(404).json({ error: 'Session not found' });
   
   if (session.status === 'running' && session.pid) {
     try {
-      process.kill(-session.pid);
-    } catch {
-      try {
-        process.kill(session.pid);
-      } catch (_) {}
-    }
+      await killProcessTree(session.pid);
+    } catch (_) {}
     session.status = 'exited';
     session.logs.push('\n[Process killed by user]\n');
     notifyDebugLog(sessionId, session.logs.join(''), session.status);

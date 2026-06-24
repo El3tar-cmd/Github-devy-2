@@ -115,7 +115,7 @@ export function useTerminalConnection(
           term.write('\r\n\x1b[1;33m⚠️ [Terminal WebSocket disconnected - Switch to HTTP fallbacks or Reconnecting...]\x1b[0m\r\n');
           
           // Exponential backoff reconnect policies under Termux/Sandbox network spikes
-          if (reconnectAttempts < 5) {
+          if (executionMode === 'ws' && reconnectAttempts < 5) {
             const nextDelay = Math.min(1000 * Math.pow(2, reconnectAttempts), 10000);
             setReconnectAttempts(prev => prev + 1);
             reconnectTimer = setTimeout(() => {
@@ -140,7 +140,14 @@ export function useTerminalConnection(
       }
     };
 
-    connectWebSocket();
+    if (executionMode === 'ws') {
+      connectWebSocket();
+    } else {
+      setConnectionStatus('disconnected');
+      setReconnectAttempts(0);
+      setError(null);
+      term.write('\r\n\x1b[1;33m[HTTP Terminal Mode active - commands run through streamed HTTP]\x1b[0m\r\n');
+    }
 
     // Key inputs directly over terminal characters
     const onDataDisposable = term.onData(data => {
@@ -191,7 +198,7 @@ export function useTerminalConnection(
       xtermRef.current = null;
       wsRef.current = null;
     };
-  }, [workspaceId, activeTabId]);
+  }, [workspaceId, activeTabId, executionMode]);
 
   return {
     terminalRef,

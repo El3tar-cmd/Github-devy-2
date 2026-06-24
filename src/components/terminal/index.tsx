@@ -121,17 +121,17 @@ export function TerminalUI({ workspaceId }: Props) {
   };
 
   const sendSpecial = (keys: string) => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+    if (keys === 'clear') {
+      if (xtermRef.current) {
+        xtermRef.current.clear();
+      }
+      setLogContent('=== Terminal Stream Logs ===\r\nBuffer Cleared.\r\n\r\n');
+    } else if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(keys);
     } else if (keys === '\x03' && isRunning) {
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
-    } else if (keys === 'clear') {
-      if (xtermRef.current) {
-        xtermRef.current.clear();
-      }
-      setLogContent('=== HTTP Terminal Stream Logs ===\r\nBuffer Cleared.\r\n\r\n');
     } else {
       setError('Active terminal session is offline. Using HTTP fallback for individual commands.');
     }

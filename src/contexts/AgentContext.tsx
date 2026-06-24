@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, { createContext, useContext, useState, useEffect, useRef } from "react";
 import { Settings, defaultSettings, ChatMessage, ChatSession } from "../types";
 import { useAgent } from "../useAgent";
 import { useWorkspaceContext } from "./WorkspaceContext";
@@ -29,22 +29,73 @@ interface AgentContextType {
 
 const AgentContext = createContext<AgentContextType | undefined>(undefined);
 
+const DEFAULT_PROJECT_SETTINGS_KEY = "__default__";
+
+function getProjectSettingsKey(workspaceId: string) {
+  return `agent_project_settings_${workspaceId || DEFAULT_PROJECT_SETTINGS_KEY}`;
+}
+
+function readJsonStorage<T>(key: string, fallback: T): T {
+  if (typeof window === "undefined") return fallback;
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? { ...fallback, ...JSON.parse(raw) } : fallback;
+  } catch (e) {
+    return fallback;
+  }
+}
+
+function getStoredSettings(workspaceId: string): Settings {
+  const globalSettings = readJsonStorage<Partial<Settings>>("agent_settings", {});
+  const projectSettings = readJsonStorage<Partial<Settings>>(getProjectSettingsKey(workspaceId), {});
+  return {
+    ...defaultSettings,
+    ...globalSettings,
+    repoUrl: projectSettings.repoUrl ?? globalSettings.repoUrl ?? defaultSettings.repoUrl,
+    githubToken: projectSettings.githubToken ?? globalSettings.githubToken ?? defaultSettings.githubToken,
+  };
+}
+
+function persistSettings(workspaceId: string, settings: Settings) {
+  if (typeof window === "undefined") return;
+
+  const { repoUrl, githubToken, ...globalSettings } = settings;
+  localStorage.setItem("agent_settings", JSON.stringify(globalSettings));
+  localStorage.setItem(
+    getProjectSettingsKey(workspaceId),
+    JSON.stringify({ repoUrl, githubToken }),
+  );
+}
+
 export const AgentProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { workspaceId, setWorkspaceId, fetchTree, fetchWorkspaces } = useWorkspaceContext();
 
-  const [settings, setSettings] = useState<Settings>(() => {
-    try {
-      const s = typeof window !== "undefined" ? localStorage.getItem("agent_settings") : null;
-      const parsed = s ? JSON.parse(s) : {};
-      return { ...defaultSettings, ...parsed };
-    } catch (e) {
-      return defaultSettings;
-    }
-  });
+  const [settings, setSettings] = useState<Settings>(() => getStoredSettings(workspaceId));
+  const previousWorkspaceIdRef = useRef(workspaceId);
+  const skipNextPersistRef = useRef(false);
 
   useEffect(() => {
-    localStorage.setItem("agent_settings", JSON.stringify(settings));
-  }, [settings]);
+    if (previousWorkspaceIdRef.current === workspaceId) return;
+
+    previousWorkspaceIdRef.current = workspaceId;
+    skipNextPersistRef.current = true;
+    setSettings((prev) => {
+      const projectSettings = getStoredSettings(workspaceId);
+      return {
+        ...prev,
+        repoUrl: projectSettings.repoUrl,
+        githubToken: projectSettings.githubToken,
+      };
+    });
+  }, [workspaceId]);
+
+  useEffect(() => {
+    if (skipNextPersistRef.current) {
+      skipNextPersistRef.current = false;
+      return;
+    }
+    persistSettings(workspaceId, settings);
+  }, [settings, workspaceId]);
 
   const [initLoading, setInitLoading] = useState(false);
   const [initSuccess, setInitSuccess] = useState(false);

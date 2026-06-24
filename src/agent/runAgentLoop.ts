@@ -449,7 +449,7 @@ Instructions for updating the plan and tasks:
                 onSettingsUpdate?.(
                   {
                     repoUrl: inv.args.repoUrl,
-                    githubToken: inv.args.token || "",
+                    githubToken: inv.args.token || settings.githubToken || "",
                   },
                   result.workspaceId,
                 );

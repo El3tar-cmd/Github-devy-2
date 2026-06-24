@@ -10,10 +10,42 @@ const GEMINI_TOOLS = [{
     const properties: Record<string, any> = {};
     if (t.function.parameters?.properties) {
       for (const [key, val] of Object.entries<any>(t.function.parameters.properties)) {
-        properties[key] = {
+        const prop: any = {
           type: mapType(val.type),
           description: val.description || '',
         };
+        
+        // Handle array types with items
+        if (val.type === 'array' && val.items) {
+          prop.items = {
+            type: mapType(val.items.type),
+            description: val.items.description || '',
+          };
+          
+          // Handle nested properties in items
+          if (val.items.properties) {
+            prop.items.properties = {};
+            for (const [itemKey, itemVal] of Object.entries<any>(val.items.properties)) {
+              prop.items.properties[itemKey] = {
+                type: mapType(itemVal.type),
+                description: itemVal.description || '',
+              };
+            }
+            prop.items.required = val.items.required || [];
+          }
+          
+          // Handle enum in items
+          if (val.items.enum) {
+            prop.items.enum = val.items.enum;
+          }
+        }
+        
+        // Handle enum values
+        if (val.enum) {
+          prop.enum = val.enum;
+        }
+        
+        properties[key] = prop;
       }
     }
 

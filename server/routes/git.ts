@@ -4,8 +4,12 @@ import fs from 'fs/promises';
 import { existsSync } from 'fs';
 import path from 'path';
 import { safePath, getWorkspaceDir, withTimeout } from '../utils/workspace';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 
 const router = Router();
+const execFileAsync = promisify(execFile);
+const GITHUB_API = 'https://api.github.com';
 
 // Prevent Git commands inside workspaces from traversing up to the IDE's own Git repo
 process.env.GIT_CEILING_DIRECTORIES = path.resolve(process.cwd());
@@ -17,6 +21,75 @@ try {
     if (err) console.warn("Failed to set git safe.directory globally:", err);
   });
 } catch (_) {}
+
+async function runGit(workspaceId: string, args: string[], timeoutMs = 60000) {
+  const { wDir } = await safePath(workspaceId, '.');
+  const { stdout, stderr } = await execFileAsync('git', args, {
+    cwd: wDir,
+    timeout: timeoutMs,
+    maxBuffer: 1024 * 1024 * 8,
+    env: {
+      ...process.env,
+      GIT_TERMINAL_PROMPT: '0',
+      GIT_ASKPASS: 'true',
+      SSH_ASKPASS: 'true',
+    },
+  });
+  return { stdout: stdout.trim(), stderr: stderr.trim() };
+}
+
+function parseGithubRemote(remoteUrl: string) {
+  const trimmed = remoteUrl.trim().replace(/\.git$/, '');
+  const sshMatch = trimmed.match(/^git@github\.com:([^/]+)\/(.+)$/);
+  if (sshMatch) return { owner: sshMatch[1], repo: sshMatch[2] };
+
+  try {
+    const url = new URL(trimmed);
+    if (url.hostname !== 'github.com') return null;
+    const [owner, repo] = url.pathname.replace(/^\/+/, '').split('/');
+    return owner && repo ? { owner, repo } : null;
+  } catch {
+    return null;
+  }
+}
+
+async function resolveGithubRepo(workspaceId: string, owner?: string, repo?: string) {
+  if (owner && repo) return { owner, repo };
+  const remote = await runGit(workspaceId, ['remote', 'get-url', 'origin']);
+  const parsed = parseGithubRemote(remote.stdout);
+  if (!parsed) throw new Error('Could not infer GitHub owner/repo from origin remote. Provide owner and repo.');
+  return parsed;
+}
+
+function githubHeaders(token?: string) {
+  const finalToken = token || process.env.GITHUB_TOKEN || '';
+  return {
+    Accept: 'application/vnd.github+json',
+    'X-GitHub-Api-Version': '2022-11-28',
+    ...(finalToken ? { Authorization: `Bearer ${finalToken}` } : {}),
+  };
+}
+
+async function githubRequest(apiPath: string, token?: string, init: RequestInit = {}) {
+  const res = await fetch(`${GITHUB_API}${apiPath}`, {
+    ...init,
+    headers: {
+      ...githubHeaders(token),
+      ...(init.headers || {}),
+    },
+  });
+
+  const contentType = res.headers.get('content-type') || '';
+  if (!res.ok) {
+    const message = contentType.includes('application/json')
+      ? JSON.stringify(await res.json())
+      : await res.text();
+    throw new Error(`GitHub API ${res.status}: ${message}`);
+  }
+
+  if (contentType.includes('application/json')) return res.json();
+  return res;
+}
 
 router.post('/clone', async (req, res) => {
   try {
@@ -207,6 +280,233 @@ router.post('/init', async (req, res) => {
     const git = simpleGit(wDir);
     await git.init();
     res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/history', async (req, res) => {
+  try {
+    const { workspaceId, limit = 30 } = req.body;
+    const count = Math.min(Math.max(Number(limit) || 30, 1), 200);
+    const result = await runGit(workspaceId, [
+      'log',
+      `-${count}`,
+      '--date=iso',
+      '--pretty=format:%H%x09%h%x09%an%x09%ad%x09%s',
+    ]);
+    const commits = result.stdout ? result.stdout.split('\n').map(line => {
+      const [hash, shortHash, author, date, ...subjectParts] = line.split('\t');
+      return { hash, shortHash, author, date, subject: subjectParts.join('\t') };
+    }) : [];
+    res.json({ success: true, commits });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/branches', async (req, res) => {
+  try {
+    const { workspaceId, includeRemote = true } = req.body;
+    const args = ['branch', '--format=%(refname:short)%09%(HEAD)%09%(upstream:short)'];
+    if (includeRemote) args.splice(1, 0, '--all');
+    const result = await runGit(workspaceId, args);
+    const branches = result.stdout ? result.stdout.split('\n').map(line => {
+      const [name, head, upstream] = line.split('\t');
+      return { name, current: head === '*', upstream: upstream || null };
+    }) : [];
+    res.json({ success: true, branches });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/checkout', async (req, res) => {
+  try {
+    const { workspaceId, branch, create = false, startPoint } = req.body;
+    if (!branch) return res.status(400).json({ error: 'branch required' });
+    const args = create
+      ? ['checkout', '-b', branch, ...(startPoint ? [startPoint] : [])]
+      : ['checkout', branch];
+    const result = await runGit(workspaceId, args);
+    res.json({ success: true, output: result.stdout || result.stderr });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/fetch', async (req, res) => {
+  try {
+    const { workspaceId, remote = 'origin', prune = true } = req.body;
+    const result = await runGit(workspaceId, ['fetch', ...(prune ? ['--prune'] : []), remote], 120000);
+    res.json({ success: true, output: result.stdout || result.stderr });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/merge', async (req, res) => {
+  try {
+    const { workspaceId, ref, noFf = false } = req.body;
+    if (!ref) return res.status(400).json({ error: 'ref required' });
+    const result = await runGit(workspaceId, ['merge', ...(noFf ? ['--no-ff'] : []), ref]);
+    res.json({ success: true, output: result.stdout || result.stderr });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/remotes', async (req, res) => {
+  try {
+    const { workspaceId } = req.body;
+    const result = await runGit(workspaceId, ['remote', '-v']);
+    const remotes = result.stdout ? result.stdout.split('\n').map(line => {
+      const match = line.match(/^(\S+)\s+(\S+)\s+\((fetch|push)\)$/);
+      return match ? { name: match[1], url: match[2], type: match[3] } : { raw: line };
+    }) : [];
+    res.json({ success: true, remotes });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/remote', async (req, res) => {
+  try {
+    const { workspaceId, action, name = 'origin', url } = req.body;
+    if (!['add', 'set-url', 'remove'].includes(action)) {
+      return res.status(400).json({ error: 'action must be add, set-url, or remove' });
+    }
+    if (action !== 'remove' && !url) return res.status(400).json({ error: 'url required' });
+    const args = action === 'remove'
+      ? ['remote', 'remove', name]
+      : ['remote', action, name, url];
+    const result = await runGit(workspaceId, args);
+    res.json({ success: true, output: result.stdout || result.stderr });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/stash', async (req, res) => {
+  try {
+    const { workspaceId, action = 'list', message, stashRef } = req.body;
+    const allowed = ['list', 'push', 'pop', 'apply', 'drop'];
+    if (!allowed.includes(action)) return res.status(400).json({ error: `action must be one of ${allowed.join(', ')}` });
+    const args = ['stash', action];
+    if (action === 'push') args.push('-u', '-m', message || 'Agent stash');
+    if (['pop', 'apply', 'drop'].includes(action) && stashRef) args.push(stashRef);
+    const result = await runGit(workspaceId, args);
+    res.json({ success: true, output: result.stdout || result.stderr });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/tags', async (req, res) => {
+  try {
+    const { workspaceId, action = 'list', name, message, ref } = req.body;
+    let args: string[];
+    if (action === 'list') {
+      args = ['tag', '--list'];
+    } else if (action === 'create') {
+      if (!name) return res.status(400).json({ error: 'name required' });
+      args = message ? ['tag', '-a', name, '-m', message, ...(ref ? [ref] : [])] : ['tag', name, ...(ref ? [ref] : [])];
+    } else if (action === 'delete') {
+      if (!name) return res.status(400).json({ error: 'name required' });
+      args = ['tag', '-d', name];
+    } else {
+      return res.status(400).json({ error: 'action must be list, create, or delete' });
+    }
+    const result = await runGit(workspaceId, args);
+    res.json({ success: true, output: result.stdout || result.stderr });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/actions/runs', async (req, res) => {
+  try {
+    const { workspaceId, owner, repo, branch, workflowId, limit = 20, token } = req.body;
+    const target = await resolveGithubRepo(workspaceId, owner, repo);
+    const params = new URLSearchParams();
+    if (branch) params.set('branch', branch);
+    params.set('per_page', String(Math.min(Math.max(Number(limit) || 20, 1), 100)));
+    const pathPrefix = workflowId
+      ? `/repos/${target.owner}/${target.repo}/actions/workflows/${workflowId}/runs`
+      : `/repos/${target.owner}/${target.repo}/actions/runs`;
+    const data = await githubRequest(`${pathPrefix}?${params.toString()}`, token);
+    res.json({ success: true, repository: target, runs: data.workflow_runs || [] });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/actions/run', async (req, res) => {
+  try {
+    const { workspaceId, owner, repo, runId, token } = req.body;
+    if (!runId) return res.status(400).json({ error: 'runId required' });
+    const target = await resolveGithubRepo(workspaceId, owner, repo);
+    const run = await githubRequest(`/repos/${target.owner}/${target.repo}/actions/runs/${runId}`, token);
+    res.json({ success: true, repository: target, run });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/actions/jobs', async (req, res) => {
+  try {
+    const { workspaceId, owner, repo, runId, token } = req.body;
+    if (!runId) return res.status(400).json({ error: 'runId required' });
+    const target = await resolveGithubRepo(workspaceId, owner, repo);
+    const data = await githubRequest(`/repos/${target.owner}/${target.repo}/actions/runs/${runId}/jobs?per_page=100`, token);
+    res.json({ success: true, repository: target, jobs: data.jobs || [] });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/actions/logs', async (req, res) => {
+  try {
+    const { workspaceId, owner, repo, runId, jobId, token } = req.body;
+    if (!runId && !jobId) return res.status(400).json({ error: 'runId or jobId required' });
+    const target = await resolveGithubRepo(workspaceId, owner, repo);
+    const apiPath = jobId
+      ? `/repos/${target.owner}/${target.repo}/actions/jobs/${jobId}/logs`
+      : `/repos/${target.owner}/${target.repo}/actions/runs/${runId}/logs`;
+    const response = await githubRequest(apiPath, token);
+    const contentType = response.headers.get('content-type') || 'text/plain';
+    const text = await response.text();
+    res.json({ success: true, repository: target, contentType, logs: text.slice(0, 200000), truncated: text.length > 200000 });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/actions/artifacts', async (req, res) => {
+  try {
+    const { workspaceId, owner, repo, runId, token } = req.body;
+    if (!runId) return res.status(400).json({ error: 'runId required' });
+    const target = await resolveGithubRepo(workspaceId, owner, repo);
+    const data = await githubRequest(`/repos/${target.owner}/${target.repo}/actions/runs/${runId}/artifacts?per_page=100`, token);
+    res.json({ success: true, repository: target, artifacts: data.artifacts || [] });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/actions/download-artifact', async (req, res) => {
+  try {
+    const { workspaceId, owner, repo, artifactId, token, fileName } = req.body;
+    if (!artifactId) return res.status(400).json({ error: 'artifactId required' });
+    const target = await resolveGithubRepo(workspaceId, owner, repo);
+    const response = await githubRequest(`/repos/${target.owner}/${target.repo}/actions/artifacts/${artifactId}/zip`, token);
+    const bytes = Buffer.from(await response.arrayBuffer());
+    const { resolved } = await safePath(workspaceId, path.join('.github-devy', 'artifacts'));
+    await fs.mkdir(resolved, { recursive: true });
+    const outputName = (fileName || `artifact-${artifactId}.zip`).replace(/[^a-zA-Z0-9_.-]/g, '_');
+    const outputPath = path.join(resolved, outputName.endsWith('.zip') ? outputName : `${outputName}.zip`);
+    await fs.writeFile(outputPath, bytes);
+    res.json({ success: true, repository: target, path: path.relative((await safePath(workspaceId, '.')).wDir, outputPath), bytes: bytes.length });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

@@ -59,7 +59,7 @@ export async function runSubAgent(
     if (signal?.aborted) throw new Error("Sub-agent aborted");
     iterations++;
 
-    onProgress?.(`${definition.name}: Iteration ${iterations}/${definition.maxIterations}`, messages);
+    onProgress?.(`${definition.name}: Iteration ${iterations}/${maxLimit}`, messages);
 
     let responseMsg: any;
     const sanitizedMessages = sanitizeMessagesForLLM(messages);
@@ -174,7 +174,7 @@ export async function runSubAgent(
   }
 
   return { 
-    result: `Sub-agent ${definition.name} reached maximum iterations (${definition.maxIterations})`,
+    result: `Sub-agent ${definition.name} reached maximum iterations (${maxLimit})`,
     messages 
   };
 }

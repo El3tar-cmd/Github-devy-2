@@ -41,7 +41,7 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({ activeTab }) => {
         activeTab === "chat" ? "flex" : "hidden lg:flex"
       } lg:border-r border-white/5 bg-[#0b0b0e]`}
     >
-      <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-6 scroll-smooth will-change-scroll pb-32">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-6 scroll-smooth pb-40">
         <div className="max-w-3xl mx-auto space-y-6">
           {messages.length === 0 && (
             <div className="h-64 flex flex-col items-center justify-center text-slate-500 space-y-4">

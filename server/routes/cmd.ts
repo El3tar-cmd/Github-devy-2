@@ -60,11 +60,9 @@ router.post('/run', async (req, res) => {
         ...process.env,
         PATH: process.env.PATH || '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
       },
-      detached: true
+      detached: false,
+      stdio: ['pipe', 'pipe', 'pipe']
     });
-    try {
-      child.unref();
-    } catch (_) {}
     (child as any).command = command;
     activeProcesses.add(child);
     
@@ -160,7 +158,12 @@ router.post('/kill', (req, res) => {
     const session = terminalSessions.get(String(id));
     if (session) {
       try {
-        session.bash.kill('SIGKILL');
+        // Kill the process group for spawned shells
+        try {
+          process.kill(-session.bash.pid, 'SIGKILL');
+        } catch (_) {
+          session.bash.kill('SIGKILL');
+        }
       } catch (e: any) {
         console.error(`Error killing terminal: ${e.message}`);
       }
@@ -172,6 +175,8 @@ router.post('/kill', (req, res) => {
   } else if (type === 'background') {
     const pid = Number(id);
     let found = false;
+    
+    // First try to find in activeProcesses
     for (const child of activeProcesses) {
       if (child.pid === pid) {
         try {
@@ -184,10 +189,17 @@ router.post('/kill', (req, res) => {
         break;
       }
     }
+    
     if (found) {
       return res.json({ success: true, message: `Background process ${pid} killed.` });
     } else {
-      return res.status(404).json({ error: `Background process ${pid} not found.` });
+      // Try direct kill if not found in map (orphaned process)
+      try {
+        process.kill(pid, 'SIGKILL');
+        return res.json({ success: true, message: `Process ${pid} killed.` });
+      } catch (e: any) {
+        return res.status(404).json({ error: `Process ${pid} not found or cannot be killed: ${e.message}` });
+      }
     }
   }
 

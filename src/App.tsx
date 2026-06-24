@@ -66,7 +66,7 @@ function MainApp() {
   }, []);
 
   return (
-    <div className="flex h-screen bg-[#09090b] text-slate-200 overflow-hidden font-sans antialiased selection:bg-emerald-500/30 selection:text-emerald-200">
+    <div className="flex h-[100dvh] bg-[#09090b] text-slate-200 overflow-hidden font-sans antialiased selection:bg-emerald-500/30 selection:text-emerald-200">
       {/* Left Sidebar layout */}
       <SidebarLayout
         sidebarOpen={sidebarOpen}

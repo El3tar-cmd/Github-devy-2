@@ -147,12 +147,8 @@ export function setupWebSocketTerminal(server: http.Server) {
             PATH: process.env.PATH || '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
           }, 
           cwd: wDir,
-          detached: true
+          detached: false
         });
-
-        try {
-          bash.unref();
-        } catch (_) {}
 
         session = {
           bash,

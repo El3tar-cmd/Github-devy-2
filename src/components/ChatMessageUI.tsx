@@ -1,13 +1,32 @@
 import { ChatMessage, ToolInvocation } from '../types';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Bot, ChevronDown, ChevronRight, CheckCircle2, CircleDashed, AlertCircle } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import {
+  AlertCircle,
+  Bot,
+  CheckCircle2,
+  CircleDashed,
+  Code2,
+  Cpu,
+  Database,
+  FilePenLine,
+  FileText,
+  FolderTree,
+  Globe,
+  Image as ImageIcon,
+  MessageSquare,
+  Search,
+  Terminal,
+  Wrench,
+} from 'lucide-react';
 import clsx from 'clsx';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 export function ChatMessageUI({ msg }: { msg: ChatMessage }) {
-  const isAgent = msg.role === 'assistant';
+  if (msg.hidden) {
+    return null;
+  }
+
   const isUser = msg.role === 'user';
   const isTool = msg.role === 'tool';
   const isSystem = msg.role === 'system';
@@ -40,7 +59,7 @@ export function ChatMessageUI({ msg }: { msg: ChatMessage }) {
             </div>
          )}
          {msg.content && (
-            <div className={clsx("break-words overflow-hidden w-full max-w-full", !isUser && "prose prose-invert prose-emerald max-w-none prose-pre:bg-[#151519] prose-pre:border prose-pre:border-white/10 prose-headings:text-emerald-50 prose-a:text-emerald-400 prose-p:text-slate-300")}>
+            <div className={clsx("break-words overflow-hidden w-full max-w-full", isUser && "whitespace-pre-wrap", !isUser && "prose prose-invert prose-emerald max-w-none prose-pre:bg-[#151519] prose-pre:border prose-pre:border-white/10 prose-headings:text-emerald-50 prose-a:text-emerald-400 prose-p:text-slate-300")}>
                {isUser ? msg.content : (
                   <Markdown remarkPlugins={[remarkGfm]}>{msg.content}</Markdown>
                )}
@@ -62,176 +81,192 @@ export function ChatMessageUI({ msg }: { msg: ChatMessage }) {
 }
 
 function ToolInvocationCard({ inv }: { inv: ToolInvocation }) {
-  const [expanded, setExpanded] = useState(() => {
-    return inv.name === 'browser_screenshot' && inv.status === 'success';
-  });
+  const parsedResult = parseMaybeJson(inv.result);
+  const toolMeta = getToolMeta(inv.name);
+  const ToolIcon = toolMeta.icon;
+  const argsText = formatValue(inv.args);
+  const resultText = formatValue(parsedResult ?? inv.result ?? 'Waiting for result');
+  const chips = getToolChips(inv.name, inv.args, parsedResult);
 
-  useEffect(() => {
-    if (inv.name === 'browser_screenshot' && inv.status === 'success') {
-      setExpanded(true);
-    }
-  }, [inv.status, inv.name]);
+  const statusClass = clsx(
+    'border font-mono text-[10px] uppercase tracking-wide',
+    inv.status === 'success' && 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
+    inv.status === 'error' && 'border-rose-500/30 bg-rose-500/10 text-rose-300',
+    inv.status === 'running' && 'border-blue-500/30 bg-blue-500/10 text-blue-300'
+  );
 
-  const renderScreenshotResult = () => {
-    if (!inv.result) return null;
-
-    try {
-      const resObj = JSON.parse(inv.result);
-      if (typeof resObj.screenshot === 'string' && resObj.screenshot.startsWith('data:image/png;base64,')) {
-        return (
-          <div className="p-2 bg-[#1a1a21] rounded-xl border border-white/5 max-w-full overflow-hidden">
-            <img
-              src={resObj.screenshot}
-              alt="Browser Sandbox Screenshot"
-              className="rounded-lg max-w-full h-auto border border-white/10 shadow-lg object-contain mx-auto"
-              style={{ maxHeight: '450px' }}
-            />
-            <p className="text-[10px] text-slate-500 mt-2 font-mono text-center">{resObj.message}</p>
-          </div>
-        );
-      }
-
-      return (
-        <pre className="text-[11px] font-mono text-slate-300 m-0 leading-relaxed whitespace-pre-wrap break-words bg-[#1a1a21] p-3 rounded-lg border border-white/5">
-          {JSON.stringify(resObj, null, 2)}
-        </pre>
-      );
-    } catch (e) {
-      return (
-        <pre className="text-[11px] font-mono text-slate-300 m-0 leading-relaxed whitespace-pre-wrap break-words bg-[#1a1a21] p-3 rounded-lg border border-white/5">
-          {inv.result}
-        </pre>
-      );
-    }
+  const renderStatusIcon = () => {
+    if (inv.status === 'running') return <CircleDashed className="w-4 h-4 text-blue-400 animate-spin shrink-0" />;
+    if (inv.status === 'success') return <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />;
+    return <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />;
   };
 
-  const renderSubAgentResult = () => {
-    if (!inv.result) return null;
-    
-    try {
-      const res = JSON.parse(inv.result);
-      
-      // Check if it is a running progress state
-      if (res.agentId && res.status && !res.result && !res.agents) {
+  const renderPrimaryOutput = () => {
+    if (inv.name === 'browser_screenshot' && parsedResult && typeof parsedResult === 'object') {
+      const screenshot = (parsedResult as any).screenshot;
+      if (typeof screenshot === 'string' && screenshot.startsWith('data:image/png;base64,')) {
         return (
-          <div className="flex items-center gap-2 p-3 bg-blue-500/10 border border-blue-500/20 text-blue-300 rounded-xl font-mono text-[11px] animate-pulse">
-            <span className="w-2 h-2 rounded-full bg-blue-500 animate-ping" />
-            <span>Sub-Agent [{res.agentId.substring(0, 6)}...]: {res.status}</span>
-          </div>
-        );
-      }
-      
-      // Parallel sub-agents results
-      if (Array.isArray(res.agents)) {
-        return (
-          <div className="space-y-3 w-full">
-            {res.agents.map((agent: any, idx: number) => (
-              <div key={idx} className="bg-[#121217] border border-white/5 rounded-xl p-3 space-y-2">
-                <div className="flex items-center justify-between border-b border-white/5 pb-1 text-xs">
-                  <span className="font-bold text-emerald-400">🤖 {agent.agentType} Agent</span>
-                  <span className={`font-mono text-[10px] px-1.5 py-0.5 rounded-full ${
-                    agent.status === 'completed' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400 animate-pulse'
-                  }`}>
-                    {agent.status.toUpperCase()}
-                  </span>
-                </div>
-                {agent.result && (
-                  <div className="prose prose-invert prose-xs max-w-none text-slate-300 font-sans leading-relaxed select-text mt-2 text-left">
-                    <Markdown remarkPlugins={[remarkGfm]}>{agent.result}</Markdown>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        );
-      }
-      
-      // Single sub-agent completed result
-      if (res.agentId && res.result) {
-        return (
-          <div className="space-y-3 bg-[#121217] border border-white/5 rounded-xl p-4 w-full">
-            <div className="flex items-center justify-between border-b border-white/5 pb-2 text-xs">
-              <span className="font-bold text-emerald-400">🤖 {res.agentType.toUpperCase()} Agent</span>
-              <span className="text-slate-500 font-mono text-[10px]">
-                Iterations: {res.iterationsUsed} | ID: {res.agentId.substring(0, 6)}
-              </span>
+          <div className="space-y-2">
+            <div className="p-2 bg-[#101014] rounded-lg border border-white/10 max-w-full overflow-hidden">
+              <img
+                src={screenshot}
+                alt="Browser Sandbox Screenshot"
+                className="rounded-md max-w-full h-auto border border-white/10 object-contain mx-auto"
+                style={{ maxHeight: '450px' }}
+              />
             </div>
-            <div className="prose prose-invert prose-xs max-w-none text-slate-300 font-sans leading-relaxed select-text mt-2 text-left">
-              <Markdown remarkPlugins={[remarkGfm]}>{res.result}</Markdown>
-            </div>
+            {(parsedResult as any).message && (
+              <pre className="text-[11px] font-mono text-slate-400 m-0 leading-relaxed whitespace-pre-wrap break-words">
+                {(parsedResult as any).message}
+              </pre>
+            )}
           </div>
         );
       }
-    } catch (e) {
-      // Fallback
     }
-    
-    return null;
+
+    return (
+      <pre className="text-[11px] md:text-xs font-mono text-slate-300 m-0 leading-relaxed whitespace-pre-wrap break-words max-h-[360px] overflow-auto pr-1">
+        {resultText}
+      </pre>
+    );
   };
-  
+
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.98 }}
       animate={{ opacity: 1, scale: 1 }}
-      className="rounded-xl border border-white/5 bg-[#1e1e24] overflow-hidden"
+      className="rounded-lg border border-white/10 bg-[#141419] overflow-hidden shadow-[0_12px_35px_rgba(0,0,0,0.18)]"
     >
-       <div 
-         onClick={() => setExpanded(!expanded)}
-         className="px-3 md:px-4 py-3 flex items-center justify-between cursor-pointer hover:bg-white/[0.02] transition-colors gap-3"
-       >
-          <div className="flex items-center gap-2 md:gap-3 flex-1 min-w-0 overflow-hidden">
-             {inv.status === 'running' && <CircleDashed className="w-4 h-4 text-blue-400 animate-spin shrink-0" />}
-             {inv.status === 'success' && <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />}
-             {inv.status === 'error' && <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />}
-             
-             <span className="font-mono text-[11px] md:text-xs text-slate-300 font-semibold shadow-sm shrink-0">
-                {inv.name}
-             </span>
-             <span className="font-mono text-[11px] md:text-xs text-slate-500 truncate min-w-0 flex-1 ml-1 md:ml-2">
-                {JSON.stringify(inv.args)}
-             </span>
+      <div className="px-3 md:px-4 py-3 bg-[#181820] border-b border-white/10">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start gap-3 min-w-0">
+            <div className={clsx('w-8 h-8 rounded-md flex items-center justify-center border shrink-0', toolMeta.iconClass)}>
+              <ToolIcon className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs md:text-sm font-semibold text-slate-100">{toolMeta.label}</span>
+                <span className="font-mono text-[10px] text-slate-500">{inv.name}</span>
+              </div>
+              <div className="mt-1 flex flex-wrap gap-1.5">
+                {chips.map((chip, idx) => (
+                  <span
+                    key={`${chip}-${idx}`}
+                    className="max-w-full rounded border border-white/10 bg-white/[0.03] px-1.5 py-0.5 font-mono text-[10px] text-slate-400 break-all"
+                  >
+                    {chip}
+                  </span>
+                ))}
+              </div>
+            </div>
           </div>
-          <button className="text-slate-500 shrink-0 ml-1">
-             {expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-          </button>
-       </div>
-       
-       <AnimatePresence>
-          {expanded && (
-             <motion.div 
-               initial={{ height: 0, opacity: 0 }}
-               animate={{ height: 'auto', opacity: 1 }}
-               exit={{ height: 0, opacity: 0 }}
-               className="border-t border-white/5 bg-[#151519] overflow-hidden text-xs"
-             >
-                <div className="p-4 space-y-4">
-                   <div>
-                      <div className="text-slate-500 font-mono mb-1 text-[10px] uppercase tracking-wider">Arguments</div>
-                      <pre className="text-[11px] font-mono text-emerald-400/80 m-0 leading-relaxed whitespace-pre-wrap break-words bg-[#1a1a21] p-3 rounded-lg border border-white/5">
-                        {JSON.stringify(inv.args, null, 2)}
-                      </pre>
-                   </div>
-                   
-                   {inv.result ? (
-                      <div className="space-y-2">
-                         <div className="text-slate-500 font-mono mb-1 text-[10px] uppercase tracking-wider">Result</div>
-                         
-                         {inv.name === 'browser_screenshot' && renderScreenshotResult()}
-                         {(inv.name === 'invoke_subagent' || inv.name === 'invoke_parallel_subagents') && renderSubAgentResult()}
+          <div className="flex items-center gap-2 shrink-0">
+            {renderStatusIcon()}
+            <span className={clsx('rounded-full px-2 py-0.5', statusClass)}>{inv.status}</span>
+          </div>
+        </div>
+      </div>
 
-                         {inv.name !== 'browser_screenshot' && inv.name !== 'invoke_subagent' && inv.name !== 'invoke_parallel_subagents' && (
-                           <pre className="text-[11px] font-mono text-slate-300 m-0 leading-relaxed whitespace-pre-wrap break-words bg-[#1a1a21] p-3 rounded-lg border border-white/5">
-                             {inv.result.length > 5000 ? '...[truncated]\n' + inv.result.substring(inv.result.length - 5000) : inv.result}
-                           </pre>
-                         )}
-                      </div>
-                    ) : (
-                      <div className="text-slate-500 text-[11px] italic">Waiting for result...</div>
-                    )}
-                </div>
-             </motion.div>
-          )}
-       </AnimatePresence>
+      <div className="grid gap-0 md:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
+        <div className="border-b md:border-b-0 md:border-r border-white/10 bg-[#101014] p-3 md:p-4 min-w-0">
+          <div className="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+            <Cpu className="w-3.5 h-3.5" />
+            <span>Input</span>
+          </div>
+          <pre className="text-[11px] md:text-xs font-mono text-slate-300 m-0 leading-relaxed whitespace-pre-wrap break-words max-h-[300px] overflow-auto pr-1">
+            {argsText || '{}'}
+          </pre>
+        </div>
+
+        <div className="bg-[#0e0e12] p-3 md:p-4 min-w-0">
+          <div className="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+            <Wrench className="w-3.5 h-3.5" />
+            <span>{inv.status === 'running' ? 'Live Output' : 'Output'}</span>
+          </div>
+          {renderPrimaryOutput()}
+        </div>
+      </div>
     </motion.div>
   );
+}
+
+function parseMaybeJson(value?: string): unknown {
+  if (!value) return undefined;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
+
+function formatValue(value: unknown): string {
+  if (value === undefined || value === null) return '';
+  if (typeof value === 'string') return value;
+  return JSON.stringify(value, null, 2);
+}
+
+function getToolMeta(name: string) {
+  if (name.includes('command') || name.startsWith('debug_') || name === 'run_command') {
+    return { label: 'Terminal Action', icon: Terminal, iconClass: 'bg-blue-500/10 border-blue-500/25 text-blue-300' };
+  }
+  if (name.includes('write') || name.includes('replace') || name.includes('rename') || name.includes('delete')) {
+    return { label: 'File Edit', icon: FilePenLine, iconClass: 'bg-amber-500/10 border-amber-500/25 text-amber-300' };
+  }
+  if (name.includes('read_file') || name.includes('file')) {
+    return { label: 'File Read', icon: FileText, iconClass: 'bg-cyan-500/10 border-cyan-500/25 text-cyan-300' };
+  }
+  if (name.includes('list_directory')) {
+    return { label: 'Workspace Scan', icon: FolderTree, iconClass: 'bg-slate-500/10 border-slate-500/25 text-slate-300' };
+  }
+  if (name.includes('search') || name.includes('rag')) {
+    return { label: 'Search', icon: Search, iconClass: 'bg-violet-500/10 border-violet-500/25 text-violet-300' };
+  }
+  if (name.includes('browser') || name.includes('web')) {
+    return { label: name.includes('screenshot') ? 'Visual Capture' : 'Web Action', icon: name.includes('screenshot') ? ImageIcon : Globe, iconClass: 'bg-emerald-500/10 border-emerald-500/25 text-emerald-300' };
+  }
+  if (name.includes('database')) {
+    return { label: 'Database Action', icon: Database, iconClass: 'bg-fuchsia-500/10 border-fuchsia-500/25 text-fuchsia-300' };
+  }
+  if (name.includes('subagent') || name.includes('agent_task')) {
+    return { label: 'Sub-Agent Action', icon: Bot, iconClass: 'bg-orange-500/10 border-orange-500/25 text-orange-300' };
+  }
+  if (name === 'ask_human') {
+    return { label: 'Human Input', icon: MessageSquare, iconClass: 'bg-rose-500/10 border-rose-500/25 text-rose-300' };
+  }
+  return { label: 'Tool Action', icon: Code2, iconClass: 'bg-slate-500/10 border-slate-500/25 text-slate-300' };
+}
+
+function getToolChips(name: string, args: any, result: unknown): string[] {
+  const chips: string[] = [];
+  const add = (label: string, value: unknown) => {
+    if (value === undefined || value === null || value === '') return;
+    const text = String(value);
+    chips.push(`${label}: ${text.length > 96 ? `${text.slice(0, 96)}...` : text}`);
+  };
+
+  add('path', args?.path || args?.filePath || args?.targetPath);
+  add('command', args?.command);
+  add('query', args?.query || args?.pattern);
+  add('url', args?.url);
+  add('agent', args?.agentName || args?.agentId || args?.agentType);
+  add('task', args?.taskId || args?.task);
+  add('session', args?.sessionId);
+
+  if (result && typeof result === 'object') {
+    const obj = result as any;
+    add('status', obj.status);
+    add('taskId', obj.taskId);
+    add('agent', obj.agentName || obj.agentId);
+    add('bytes', obj.bytesWritten);
+    if (Array.isArray(obj.agents)) add('agents', obj.agents.length);
+    if (Array.isArray(obj.tasks)) add('tasks', obj.tasks.length);
+    if (obj.path && !chips.some((chip) => chip.startsWith('path:'))) add('path', obj.path);
+  }
+
+  if (chips.length === 0) {
+    add('tool', name);
+  }
+
+  return chips.slice(0, 6);
 }

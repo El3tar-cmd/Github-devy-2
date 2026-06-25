@@ -59,7 +59,7 @@ export async function runSubAgent(
     if (signal?.aborted) throw new Error("Sub-agent aborted");
     iterations++;
 
-    onProgress?.(`${definition.name}: Iteration ${iterations}/${maxLimit}`, messages);
+    onProgress?.(`${definition.name}: Iteration ${iterations}/${maxLimit} - requesting model response`, messages);
 
     let responseMsg: any;
     const sanitizedMessages = sanitizeMessagesForLLM(messages);
@@ -136,21 +136,36 @@ export async function runSubAgent(
         geminiParts: responseMsg.geminiParts
       };
       messages.push(asstMsg);
+      onProgress?.(`${definition.name}: selected ${invocations.length} tool call${invocations.length === 1 ? "" : "s"}`, messages);
 
       // Execute tools
       for (const inv of invocations) {
         if (!definition.allowedTools.includes(inv.name)) {
           inv.result = JSON.stringify({ error: `Tool "${inv.name}" is not allowed for ${definition.name}` });
           inv.status = "error";
+          onProgress?.(`${definition.name}: blocked disallowed tool ${inv.name}`, messages);
           continue;
         }
         try {
-          const result = await executeToolCallFn(inv.name, inv.args, workspaceId, settings, undefined, signal);
+          onProgress?.(`${definition.name}: using ${inv.name}`, messages);
+          const result = await executeToolCallFn(
+            inv.name,
+            inv.args,
+            workspaceId,
+            settings,
+            (chunk: string) => {
+              inv.result = typeof chunk === "string" ? chunk : JSON.stringify(chunk);
+              onProgress?.(`${definition.name}: streaming ${inv.name}`, messages);
+            },
+            signal
+          );
           inv.result = typeof result === "string" ? result : JSON.stringify(result);
           inv.status = "success";
+          onProgress?.(`${definition.name}: completed ${inv.name}`, messages);
         } catch (err: any) {
           inv.result = JSON.stringify({ error: err.message });
           inv.status = "error";
+          onProgress?.(`${definition.name}: ${inv.name} failed`, messages);
         }
       }
 
@@ -160,6 +175,7 @@ export async function runSubAgent(
         content: "",
         toolInvocations: invocations
       });
+      onProgress?.(`${definition.name}: tool results recorded`, messages);
     } else {
       // Final text response — sub-agent is done
       messages.push({
@@ -168,6 +184,7 @@ export async function runSubAgent(
         content: responseMsg.content,
         geminiParts: responseMsg.geminiParts
       });
+      onProgress?.(`${definition.name}: final response ready`, messages);
       
       return { result: responseMsg.content, messages };
     }

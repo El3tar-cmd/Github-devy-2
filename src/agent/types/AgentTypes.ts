@@ -13,13 +13,18 @@ export interface SubAgentDefinition {
 
 export interface SubAgentInstance {
   id: string;
+  typeName: string;
+  displayName: string;
   definition: SubAgentDefinition;
-  status: "idle" | "running" | "completed" | "error";
+  status: "idle" | "queued" | "running" | "completed" | "error" | "cancelled";
   messages: ChatMessage[];       // Own conversation history
   result?: string;               // Final output
+  currentTask?: string;
   startedAt: number;
   completedAt?: number;
   taskId?: string;
+  runCount?: number;
+  lastError?: string;
 }
 
 export interface AgentMessage {

@@ -3,6 +3,42 @@ import { AgentOrchestrator } from "./agent/orchestrator/AgentOrchestrator";
 import { TOOLS_SCHEMA } from "./agent/tools/toolsSchema";
 import { getAgentTaskManager } from "./agent/orchestrator/TaskManager";
 
+const SUB_AGENT_TYPES = ["researcher", "coder", "reviewer", "debugger", "planner"];
+
+function shouldAutoContinueQuestion(question: string) {
+  const normalized = String(question || "").toLowerCase();
+  const continuationPatterns = [
+    /should i continue/,
+    /do you want me to continue/,
+    /shall i continue/,
+    /continue to the next/,
+    /proceed to the next/,
+    /move on to the next/,
+    /next phase/,
+    /next step/,
+    /approve.*plan/,
+    /approve.*phase/,
+    /confirm.*continue/,
+  ];
+
+  const trueBlockerHints = [
+    "api key",
+    "token",
+    "password",
+    "secret",
+    "credential",
+    "delete",
+    "remove permanently",
+    "destructive",
+    "irreversible",
+    "production",
+    "which option",
+    "choose between",
+  ];
+
+  return continuationPatterns.some((pattern) => pattern.test(normalized)) &&
+    !trueBlockerHints.some((hint) => normalized.includes(hint));
+}
 
 export async function fetchOllamaModels(url: string) {
   try {
@@ -262,6 +298,12 @@ export async function executeToolCall(
     case "sandbox_trigger_webhook":
       return await req("/api/sandbox/trigger-webhook", args);
     case "ask_human": {
+      if (shouldAutoContinueQuestion(args.question)) {
+        return {
+          answer: "Continue autonomously. Make a conservative professional decision, update plan.md/tasks.md if needed, and proceed to the next useful implementation or verification step without waiting for phase approval.",
+          autoContinued: true,
+        };
+      }
       if ((window as any).askHuman) {
         const answer = await (window as any).askHuman(args.question);
         return { answer };
@@ -554,12 +596,16 @@ export async function executeToolCall(
       if (!settings) {
         return { error: "Settings are required to invoke subagents." };
       }
+      if (!SUB_AGENT_TYPES.includes(args.agentType)) {
+        return { error: `Unknown agent type: ${args.agentType}` };
+      }
       let orchestrator = (window as any).__agentOrchestrator;
       if (!orchestrator) {
         orchestrator = new AgentOrchestrator();
         (window as any).__agentOrchestrator = orchestrator;
       }
       
+      const shouldRunInBackground = args.background !== false;
       const instancePromise = orchestrator.invokeSubAgent(
         args.agentType,
         args.task,
@@ -571,19 +617,21 @@ export async function executeToolCall(
           if (onChunk) onChunk(JSON.stringify({ agentId, status }));
         },
         args.maxIterations,
-        args.timeoutSeconds
+        args.timeoutSeconds,
+        args.agentName
       );
       
-      if (args.background) {
+      if (shouldRunInBackground) {
         const allAgents = orchestrator.getAll();
         const latest = allAgents[allAgents.length - 1];
         return {
           agentId: latest ? latest.id : "unknown",
+          agentName: latest?.displayName || args.agentName || null,
           taskId: latest?.taskId || null,
           agentType: args.agentType,
-          status: "running",
+          status: latest?.status || "queued",
           background: true,
-          message: "Sub-agent started successfully as a tracked background task. Check status using get_agent_task or list_agent_tasks."
+          message: "Sub-agent started as a tracked background task. Continue other work and check status using get_agent_task or list_agent_tasks."
         };
       }
       
@@ -601,6 +649,10 @@ export async function executeToolCall(
       if (!settings) {
         return { error: "Settings are required to invoke parallel subagents." };
       }
+      const invalidAgent = args.agents?.find((agent: any) => !SUB_AGENT_TYPES.includes(agent.agentType));
+      if (invalidAgent) {
+        return { error: `Unknown agent type: ${invalidAgent.agentType}` };
+      }
       let orchestrator = (window as any).__agentOrchestrator;
       if (!orchestrator) {
         orchestrator = new AgentOrchestrator();
@@ -609,11 +661,13 @@ export async function executeToolCall(
       
       const tasks = args.agents.map((a: any) => ({
         typeName: a.agentType,
+        name: a.agentName,
         task: a.task,
         maxIterations: a.maxIterations,
         timeoutSeconds: a.timeoutSeconds
       }));
       
+      const shouldRunInBackground = args.background !== false;
       const instancesPromise = orchestrator.invokeParallel(
         tasks,
         settings,
@@ -625,7 +679,7 @@ export async function executeToolCall(
         }
       );
       
-      if (args.background) {
+      if (shouldRunInBackground) {
         const allAgents = orchestrator.getAll();
         const count = args.agents.length;
         const latest = allAgents.slice(-count);
@@ -656,9 +710,10 @@ export async function executeToolCall(
           taskId: parallelTask.id,
           agents: latest.map(inst => ({
             agentId: inst.id,
+            agentName: inst.displayName,
             taskId: inst.taskId,
             agentType: inst.definition.name,
-            status: "running",
+            status: inst.status,
           })),
           background: true,
           message: "Parallel sub-agents started successfully in the background."
@@ -669,6 +724,7 @@ export async function executeToolCall(
       return {
         agents: instances.map(inst => ({
           agentId: inst.id,
+          agentName: inst.displayName,
           taskId: inst.taskId,
           agentType: inst.definition.name,
           status: inst.status,
@@ -687,9 +743,13 @@ export async function executeToolCall(
       }
       return {
         agentId: instance.id,
+        agentName: instance.displayName,
         agentType: instance.definition.name,
+        agentTypeKey: instance.typeName,
         status: instance.status,
         result: instance.result,
+        currentTask: instance.currentTask,
+        taskId: instance.taskId,
         iterationsUsed: instance.messages.filter((m: any) => m.role === 'assistant').length,
       };
     }
@@ -700,13 +760,45 @@ export async function executeToolCall(
       }
       const instances = orchestrator.getAll();
       return {
+        capacity: orchestrator.getCapacity(),
         agents: instances.map((inst: any) => ({
           agentId: inst.id,
+          agentName: inst.displayName,
           agentType: inst.definition.name,
+          agentTypeKey: inst.typeName,
           status: inst.status,
+          currentTask: inst.currentTask,
+          taskId: inst.taskId,
+          runCount: inst.runCount || 0,
           startedAt: inst.startedAt,
+          completedAt: inst.completedAt,
         }))
       };
+    }
+    case "remove_subagent": {
+      const agentRef = args.agentId || args.agentName;
+      if (!agentRef) {
+        return { error: "agentId or agentName is required." };
+      }
+      const orchestrator = (window as any).__agentOrchestrator;
+      if (!orchestrator) {
+        return { error: "No active orchestrator found." };
+      }
+      try {
+        const removed = orchestrator.removeAgent(agentRef, !!args.force);
+        return {
+          success: true,
+          removed: {
+            agentId: removed.id,
+            agentName: removed.displayName,
+            agentType: removed.definition.name,
+            status: removed.status,
+          },
+          capacity: orchestrator.getCapacity(),
+        };
+      } catch (err: any) {
+        return { error: err.message };
+      }
     }
     case "start_background_command": {
       const start = await req("/api/debug/start", { command: args.command });

@@ -29,31 +29,104 @@ export function useAgent(
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const currentSessionIdRef = useRef(currentSessionId);
+  const isRunningRef = useRef(isRunning);
+  const settingsRef = useRef(settings);
+  const workspaceIdRef = useRef(workspaceId);
+  const onSettingsUpdateRef = useRef(onSettingsUpdate);
+  const resumedTaskIdsRef = useRef<Set<string>>(new Set());
+  const queuedResumeTaskIdsRef = useRef<Set<string>>(new Set());
+  const pendingResumeTasksRef = useRef<any[]>([]);
 
   useEffect(() => {
     currentSessionIdRef.current = currentSessionId;
   }, [currentSessionId]);
 
   useEffect(() => {
-    const onTaskCompleted = (event: Event) => {
-      const task = (event as CustomEvent).detail;
-      if (!task?.id) return;
+    settingsRef.current = settings;
+  }, [settings]);
 
-      const targetId = currentSessionIdRef.current;
-      const updater = createSessionUpdater(targetId);
-      updater((prev) => [
+  useEffect(() => {
+    workspaceIdRef.current = workspaceId;
+  }, [workspaceId]);
+
+  useEffect(() => {
+    onSettingsUpdateRef.current = onSettingsUpdate;
+  }, [onSettingsUpdate]);
+
+  const startResumeForTask = useCallback((task: any) => {
+    resumedTaskIdsRef.current.add(task.id);
+    isRunningRef.current = true;
+
+    const targetId = currentSessionIdRef.current;
+    const updater = createSessionUpdater(targetId);
+    updater((prev) => {
+      const updated = [
         ...prev,
         {
           id: Math.random().toString(36),
           role: "system" as const,
-          content: `Background task ${task.id} finished with status "${task.status}". Use get_agent_task with taskId "${task.id}" to inspect the output.`,
+          hidden: true,
+          content: `[INTERNAL ORCHESTRA RESUME]
+Background ${task.kind} task "${task.id}" finished with status "${task.status}".
+Immediately inspect it with get_agent_task using taskId "${task.id}".
+Then integrate the result into the ongoing work: summarize the useful outcome, check for errors or missing elements, run any necessary verification or follow-up tools, and continue autonomously if the original user goal still has useful next actions.
+Do not ask the user whether to continue. Ask only for a true blocker.`,
         },
-      ]);
+      ];
+
+      window.setTimeout(() => runAgentLoop({
+        currentMessages: updated,
+        updateLog: updater,
+        settings: settingsRef.current,
+        workspaceId: workspaceIdRef.current,
+        sessionsRef,
+        currentSessionId: targetId,
+        setSessions,
+        abortControllerRef,
+        onSettingsUpdate: onSettingsUpdateRef.current,
+        setIsRunning,
+      }), 0);
+
+      return updated;
+    });
+  }, [createSessionUpdater, sessionsRef, setSessions]);
+
+  const drainPendingResumes = useCallback(() => {
+    if (isRunningRef.current) return;
+
+    while (pendingResumeTasksRef.current.length > 0) {
+      const nextTask = pendingResumeTasksRef.current.shift();
+      queuedResumeTaskIdsRef.current.delete(nextTask.id);
+      if (resumedTaskIdsRef.current.has(nextTask.id)) continue;
+      startResumeForTask(nextTask);
+      return;
+    }
+  }, [startResumeForTask]);
+
+  useEffect(() => {
+    isRunningRef.current = isRunning;
+    if (!isRunning) {
+      drainPendingResumes();
+    }
+  }, [isRunning, drainPendingResumes]);
+
+  useEffect(() => {
+    const onTaskCompleted = (event: Event) => {
+      const task = (event as CustomEvent).detail;
+      if (!task?.id) return;
+      if (task.kind !== "subagent") return;
+      if (task.status === "cancelled") return;
+      if (resumedTaskIdsRef.current.has(task.id)) return;
+      if (queuedResumeTaskIdsRef.current.has(task.id)) return;
+
+      queuedResumeTaskIdsRef.current.add(task.id);
+      pendingResumeTasksRef.current.push(task);
+      drainPendingResumes();
     };
 
     window.addEventListener("agent-task-completed", onTaskCompleted);
     return () => window.removeEventListener("agent-task-completed", onTaskCompleted);
-  }, [createSessionUpdater]);
+  }, [drainPendingResumes]);
 
   const abortAgent = () => {
     if (abortControllerRef.current) {

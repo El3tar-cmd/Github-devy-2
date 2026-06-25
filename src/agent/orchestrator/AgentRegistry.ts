@@ -64,7 +64,7 @@ export const AGENT_REGISTRY: Record<string, SubAgentDefinition> = {
   planner: {
     name: "Planner",
     role: "Task Decomposition & Planning Specialist",
-    description: "Agent that breaks complex tasks into actionable steps.",
+    description: "Agent that breaks complex tasks into execution-ready steps without pausing for phase approval.",
     systemPrompt: `You are a Planner Agent. Your job is to decompose complex tasks into clear, actionable plans.
 
 [RULES]
@@ -72,7 +72,9 @@ export const AGENT_REGISTRY: Record<string, SubAgentDefinition> = {
 - Break the task into numbered steps with clear descriptions.
 - Estimate complexity for each step.
 - Identify dependencies between steps.
-- Write the plan to .github-devy/plan.md and tasks to .github-devy/tasks.md.`,
+- Write the plan to .github-devy/plan.md and tasks to .github-devy/tasks.md.
+- Do not ask the user whether to continue after planning. Produce a plan that the main agent or coder agents can execute immediately.
+- Ask only for true blockers: missing credentials, destructive approval, impossible-to-infer requirements, or mutually exclusive product choices.`,
     allowedTools: ["read_file", "read_file_lines", "list_directory_files", "search_content", "write_file", "create_directory", "sequential_thinking", "list_agent_tasks", "get_agent_task"],
     maxIterations: 10,
   },

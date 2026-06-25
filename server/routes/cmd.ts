@@ -35,14 +35,25 @@ router.post('/run', async (req, res) => {
     let accumulatedOutput = '';
     const isServerCommand = /npm\s+(run\s+)?(dev|start|serve|watch|preview)|yarn\s+(dev|start|serve|watch|preview)|pnpm\s+(dev|start|serve|watch|preview)|vite|nodemon|python\s+manage\.py\s+runserver|node\s+server|node\s+dist\/server|live-server|http-server|gunicorn|uvicorn|flask\s+run/i.test(command);
 
-    const timeoutTimer = setTimeout(() => {
+    let responseEnded = false;
+    const endResponse = () => {
+      if (responseEnded) return;
+      responseEnded = true;
+      try { res.end(); } catch (_) {}
+    };
+    const returnControlToAgent = (reason: string) => {
+      if (responseEnded) return;
+      isBackground = true;
+      try {
+        res.write(`\n\n[${reason}. Process ${child.pid || 'unknown'} is still running in the background. Use list_active_processes to inspect it or kill_process to stop it.]\n`);
+      } catch (_) {}
+      endResponse();
+    };
+
+    const serverReadyTimer = setTimeout(() => {
       const containsServerKeywords = /listening\s+on|running\s+on|http:\/\/localhost|http:\/\/127\.0\.0\.1|http:\/\/0\.0\.0\.0|ready\s+in|compiled\s+successfully|server\s+started|express\s+server|app\s+listening/i.test(accumulatedOutput);
       if (isServerCommand || containsServerKeywords) {
-        isBackground = true;
-        try {
-          res.write('\n\n[Process continues to run in the background. Returning control to the agent/GUI...]\n');
-          res.end();
-        } catch (_) {}
+        returnControlToAgent('Process looks like a long-running server');
       }
     }, 4500);
 
@@ -58,9 +69,15 @@ router.post('/run', async (req, res) => {
     });
     (child as any).command = command;
     activeProcesses.add(child);
+
+    const foregroundLimitMs = Math.max(1000, Math.min(Number(req.body.foregroundTimeoutMs) || 12000, 120000));
+    const foregroundTimer = setTimeout(() => {
+      returnControlToAgent(`Foreground command budget exceeded after ${Math.round(foregroundLimitMs / 1000)}s`);
+    }, foregroundLimitMs);
     
     req.on('close', () => {
-      clearTimeout(timeoutTimer);
+      clearTimeout(serverReadyTimer);
+      clearTimeout(foregroundTimer);
       try {
         if (!isBackground && child.pid && !child.killed) {
           killProcessTree(child.pid, 'SIGTERM').catch(() => {
@@ -72,11 +89,12 @@ router.post('/run', async (req, res) => {
 
     child.on('error', (err) => {
       activeProcesses.delete(child);
-      clearTimeout(timeoutTimer);
+      clearTimeout(serverReadyTimer);
+      clearTimeout(foregroundTimer);
       console.error('Command tool execution error:', err);
       try {
         res.write(`\nError: ${err.message}`);
-        res.end();
+        endResponse();
       } catch (_) {}
     });
 
@@ -108,8 +126,9 @@ router.post('/run', async (req, res) => {
 
     child.on('close', (code) => {
       activeProcesses.delete(child);
-      clearTimeout(timeoutTimer);
-      try { res.end(); } catch (_) {}
+      clearTimeout(serverReadyTimer);
+      clearTimeout(foregroundTimer);
+      endResponse();
     });
   } catch (error: any) {
     if (!res.headersSent) res.status(500).json({ error: error.message });

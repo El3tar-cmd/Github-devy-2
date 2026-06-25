@@ -76,7 +76,7 @@ export const TOOLS_SCHEMA = [
     function: {
       name: "run_command",
       description:
-        "Run a shell command in the workspace. Useful for ls, npm install, etc",
+        "Run a shell command in the workspace. Short commands return normally; commands that keep running return control with a background PID so you can continue working and inspect/stop them later.",
       parameters: {
         type: "object",
         properties: { command: { type: "string" } },
@@ -746,11 +746,11 @@ export const TOOLS_SCHEMA = [
     type: "function",
     function: {
       name: "ask_human",
-      description: "Request clarification, instructions, sensitive credentials (like passwords/API keys), or design feedback from the human user.",
+      description: "Request human input only for true blockers: missing secrets/credentials, approval for destructive or irreversible actions, impossible-to-infer requirements, or mutually exclusive product decisions. Do not use for routine phase approval, planning checkpoints, status updates, or asking whether to continue.",
       parameters: {
         type: "object",
         properties: {
-          question: { type: "string", description: "The specific question or instructions prompt to show to the human." }
+          question: { type: "string", description: "A concise blocker question. Include why the answer is required before work can continue." }
         },
         required: ["question"],
       },
@@ -768,7 +768,7 @@ export const TOOLS_SCHEMA = [
     type: "function",
     function: {
       name: "invoke_subagent",
-      description: "Spawn a specialized sub-agent to handle a specific task. Can be run in the background (asynchronously) or foreground (synchronously, blocks until done).",
+      description: "Spawn a specialized sub-agent to handle a focused task. Prefer this for medium or larger work, multi-file edits, debugging, testing, security review, code review, research, or any task that benefits from a second focused pass. Runs in the background by default and returns a task handle immediately so the main agent can continue working.",
       parameters: {
         type: "object",
         properties: {
@@ -776,6 +776,10 @@ export const TOOLS_SCHEMA = [
             type: "string",
             enum: ["researcher", "coder", "reviewer", "debugger", "planner"],
             description: "The type of sub-agent to spawn",
+          },
+          agentName: {
+            type: "string",
+            description: "Optional override. Normally omit this so the orchestrator derives a task-specific name automatically.",
           },
           task: {
             type: "string",
@@ -791,7 +795,7 @@ export const TOOLS_SCHEMA = [
           },
           background: {
             type: "boolean",
-            description: "Optional. Set true to run this sub-agent asynchronously in the background and return immediately. Defaults to false.",
+            description: "Optional. Defaults to true. Set false only when you intentionally want to block until the sub-agent finishes.",
           }
         },
         required: ["agentType", "task"],
@@ -802,7 +806,7 @@ export const TOOLS_SCHEMA = [
     type: "function",
     function: {
       name: "invoke_parallel_subagents",
-      description: "Spawn multiple sub-agents in parallel to work on different aspects of a complex task simultaneously.",
+      description: "Spawn multiple sub-agents in parallel to work on separate aspects of a medium or complex task simultaneously. Prefer this when work can be split by file, concern, phase, or specialty instead of doing all analysis in the main agent.",
       parameters: {
         type: "object",
         properties: {
@@ -817,6 +821,7 @@ export const TOOLS_SCHEMA = [
                   enum: ["researcher", "coder", "reviewer", "debugger", "planner"],
                   description: "The type of sub-agent to spawn",
                 },
+                agentName: { type: "string", description: "Optional override. Normally omit so the orchestrator derives a task-specific name automatically." },
                 task: { type: "string", description: "The task description for this sub-agent" },
                 maxIterations: { type: "number", description: "Optional. Maximum ReAct iterations for this sub-agent." },
                 timeoutSeconds: { type: "number", description: "Optional. Maximum runtime in seconds for this sub-agent." }
@@ -826,7 +831,7 @@ export const TOOLS_SCHEMA = [
           },
           background: {
             type: "boolean",
-            description: "Optional. Set true to run all these parallel sub-agents in the background concurrently. Defaults to false.",
+            description: "Optional. Defaults to true. Set false only when you intentionally want to block until all sub-agents finish.",
           }
         },
         required: ["agents"],
@@ -869,13 +874,13 @@ export const TOOLS_SCHEMA = [
     type: "function",
     function: {
       name: "get_subagent_status",
-      description: "Check the current execution status and get final results of a background sub-agent.",
+      description: "Check the current execution status and get final results of a managed sub-agent by id or name.",
       parameters: {
         type: "object",
         properties: {
           agentId: {
             type: "string",
-            description: "The unique ID of the sub-agent to check"
+            description: "The unique ID or exact name of the sub-agent to check"
           }
         },
         required: ["agentId"]
@@ -885,8 +890,23 @@ export const TOOLS_SCHEMA = [
   {
     type: "function",
     function: {
+      name: "remove_subagent",
+      description: "Remove a managed sub-agent from the orchestra and free its roster slot. Use force=true to cancel queued/running work before removing.",
+      parameters: {
+        type: "object",
+        properties: {
+          agentId: { type: "string", description: "Agent id returned by invoke_subagent, invoke_parallel_subagents, or list_subagents." },
+          agentName: { type: "string", description: "Exact agent name if agentId is not provided." },
+          force: { type: "boolean", description: "Cancel queued/running work before removing. Defaults to false." }
+        }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
       name: "list_subagents",
-      description: "List all active and completed sub-agents spawned in this session.",
+      description: "List all managed sub-agents plus orchestra capacity, running count, and queued runs.",
       parameters: {
         type: "object",
         properties: {}
@@ -897,7 +917,7 @@ export const TOOLS_SCHEMA = [
     type: "function",
     function: {
       name: "start_background_command",
-      description: "Start a long-running command as a tracked background task. Use this for servers, watchers, builds, or tests that should continue while the main agent stops.",
+      description: "Start a long-running command as a tracked background task and return immediately. Use this for servers, watchers, builds, or tests that should continue while the main agent keeps working.",
       parameters: {
         type: "object",
         properties: {

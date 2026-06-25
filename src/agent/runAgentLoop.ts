@@ -67,6 +67,76 @@ function sanitizeMessagesForLLM(msgs: ChatMessage[]): ChatMessage[] {
   });
 }
 
+function parseToolArguments(args: any) {
+  if (typeof args !== "string") return args;
+  try {
+    return JSON.parse(args);
+  } catch {
+    return args;
+  }
+}
+
+function looksLikeUnexecutedContinuation(content: string) {
+  const normalized = content.toLowerCase().replace(/\s+/g, " ").trim();
+  if (!normalized) return false;
+
+  const completionSignals = [
+    "completed",
+    "finished",
+    "done",
+    "implemented",
+    "verified",
+    "tests passed",
+    "lint passed",
+    "no further",
+    "لا توجد خطوات",
+    "اكتمل",
+    "تم الانتهاء",
+  ];
+  if (completionSignals.some((signal) => normalized.includes(signal))) {
+    return false;
+  }
+
+  const continuationSignals = [
+    /\bi will now\b/,
+    /\bi'll now\b/,
+    /\bi am going to\b/,
+    /\bnext[, ]+i (will|am going to|need to)\b/,
+    /\bnow i (will|need to|am going to)\b/,
+    /\bmove on to\b/,
+    /\bproceed to\b/,
+    /\bcontinue (with|to|by)\b/,
+    /\bthe next step\b/,
+    /\breviewing\b.*\b(to|for)\b/,
+    /سأقوم/,
+    /سوف أقوم/,
+    /سأنتقل/,
+    /الخطوة التالية/,
+  ];
+
+  const actionSignals = [
+    "read",
+    "review",
+    "inspect",
+    "modify",
+    "edit",
+    "write",
+    "update",
+    "fix",
+    "test",
+    "run",
+    "check",
+    "verify",
+    "implement",
+    "FileTools.kt",
+    "BashTool.kt",
+    ".kt",
+  ].map((signal) => signal.toLowerCase());
+
+  return continuationSignals.some((pattern) => pattern.test(normalized)) &&
+    actionSignals.some((signal) => normalized.includes(signal));
+}
+
 export async function runAgentLoop({
   currentMessages,
   updateLog,
@@ -128,6 +198,7 @@ export async function runAgentLoop({
 
   const MAX_ITERATIONS = settings.maxIterations || 30;
   let iterationCounter = 0;
+  let forcedContinuationCount = 0;
 
   try {
     while (true) {
@@ -166,6 +237,7 @@ export async function runAgentLoop({
           if (planText || tasksText) {
             planContext = `\n\n[PLAN MODE IS ACTIVE - CRITICAL DIRECTIVE]:
 You must strictly follow the plan and check off tasks as you complete them.
+Plan Mode is an execution tracker, not a permission gate. Continue working autonomously until all relevant checklist items are complete, verified, or genuinely blocked.
 Here is the current plan (stored in ".github-devy/plan.md"):
 === START OF PLAN ===
 ${planText || "(No plan constructed yet)"}
@@ -180,7 +252,9 @@ Instructions for updating the plan and tasks:
 1. When you complete a task or a step, you MUST immediately update the checklist in ".github-devy/tasks.md" by modifying the file using 'write_file' or 'replace_in_file' to mark it as completed (change "- [ ]" to "- [x]").
 2. If the plan needs to be revised or detailed further, write the updated version to ".github-devy/plan.md".
 3. Always check off the current step before proceeding to the next step.
-4. Let the user know which step you are currently executing and when you mark it as completed.`;
+4. Do not stop to ask whether to continue after creating the plan, completing a phase, or updating checkboxes. Continue to the next useful task automatically.
+5. Ask the user only for true blockers: missing credentials/secrets, approval for destructive or irreversible actions, impossible-to-infer requirements, or mutually exclusive product choices that materially change the outcome.
+6. If background commands or sub-agents are running, continue other independent work, poll their task handles, integrate their results, and run verification before finalizing.`;
           }
         } catch (err) {
           console.error("Failed to fetch plan/tasks for prompt injection:", err);
@@ -211,7 +285,11 @@ Instructions for updating the plan and tasks:
 [CRITICAL ENVIRONMENT COMPATIBILITY DIRECTIVE]:
 - You MUST construct shell commands, scripts, packages, and file paths compatible with the detected host environment.
 - On Windows, always write Windows compatible commands (e.g. using 'dir', 'copy', or 'del' in cmd.exe) and paths with backslashes.
-- On Linux/macOS, use Unix standard paths and utilities.`;
+- On Linux/macOS, use Unix standard paths and utilities.
+
+[SUB-AGENT DELEGATION DIRECTIVE]:
+- For medium, complex, multi-file, debugging, testing, review, security, or research tasks, prefer spawning one or more background sub-agents early instead of doing all analysis and implementation yourself.
+- Keep tiny single-file exact edits and quick conversational answers in the main agent. Otherwise, delegate at least one focused part to a sub-agent, continue independent work, then integrate and verify the result.`;
 
       const systemPrompt = (historySummary
         ? `${baseSystemPrompt}\n\n[CONVERSATION HISTORY SUMMARY - READ THIS TO KNOW WHAT HAPPENED BUT DO NOT MENTION IT TO USER UNLESS RELEVANT]:\n${historySummary}`
@@ -223,6 +301,30 @@ Instructions for updating the plan and tasks:
       let inputTokens = 0;
       let outputTokens = 0;
       let costUsd = 0;
+      let streamedAssistantId: string | null = null;
+
+      const ensureStreamedAssistant = () => {
+        if (streamedAssistantId) return streamedAssistantId;
+        streamedAssistantId = Math.random().toString(36);
+        const draftMsg: ChatMessage = {
+          id: streamedAssistantId,
+          role: "assistant",
+          content: "",
+        };
+        updateLog((prev) => [...prev, draftMsg]);
+        return streamedAssistantId;
+      };
+
+      const updateStreamedAssistant = (patch: Partial<ChatMessage>) => {
+        const id = ensureStreamedAssistant();
+        updateLog((prev) => {
+          const msgIdx = prev.findIndex((m) => m.id === id);
+          if (msgIdx === -1) return [...prev, { id, role: "assistant", content: patch.content || "", ...patch }];
+          const copy = [...prev];
+          copy[msgIdx] = { ...copy[msgIdx], ...patch };
+          return copy;
+        });
+      };
 
       if (settings.apiProvider === "gemini") {
         const data = await submitGeminiRequest(
@@ -277,7 +379,7 @@ Instructions for updating the plan and tasks:
           body: JSON.stringify({
             model: settings.lmStudioModel || "local-model",
             messages: payloadMessages,
-            stream: false,
+            stream: true,
             tools: TOOLS_SCHEMA.map(t => ({
               type: "function",
               function: {
@@ -298,32 +400,71 @@ Instructions for updating the plan and tasks:
           );
         }
 
-        const data = await res.json();
-        const choice = data.choices?.[0];
-        if (!choice) throw new Error("No choices returned from LM Studio API");
+        const reader = res.body?.getReader();
+        if (!reader) throw new Error("LM Studio response stream is unavailable");
 
-        const toolCalls = choice.message.tool_calls?.map((tc: any) => {
-          let parsedArgs = {};
-          try {
-            parsedArgs = typeof tc.function.arguments === "string" ? JSON.parse(tc.function.arguments) : tc.function.arguments;
-          } catch (e) {
-            parsedArgs = tc.function.arguments;
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let content = "";
+        const streamedToolCalls: Record<number, any> = {};
+
+        const processLine = (line: string) => {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith("data:")) return;
+          const payload = trimmed.slice(5).trim();
+          if (!payload || payload === "[DONE]") return;
+
+          const data = JSON.parse(payload);
+          if (data.usage) {
+            inputTokens = data.usage.prompt_tokens || inputTokens;
+            outputTokens = data.usage.completion_tokens || outputTokens;
           }
-          return {
-            id: tc.id || Math.random().toString(36).substring(7),
-            name: tc.function.name,
-            args: parsedArgs,
-            status: "running" as const
-          };
-        });
+
+          const delta = data.choices?.[0]?.delta;
+          if (!delta) return;
+
+          if (delta.content) {
+            content += delta.content;
+            updateStreamedAssistant({ content });
+          }
+
+          if (delta.tool_calls?.length) {
+            for (const tc of delta.tool_calls) {
+              const index = tc.index ?? 0;
+              streamedToolCalls[index] ||= {
+                id: tc.id || Math.random().toString(36).substring(7),
+                function: { name: "", arguments: "" },
+              };
+              if (tc.id) streamedToolCalls[index].id = tc.id;
+              if (tc.function?.name) streamedToolCalls[index].function.name += tc.function.name;
+              if (tc.function?.arguments) streamedToolCalls[index].function.arguments += tc.function.arguments;
+            }
+          }
+        };
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+          for (const line of lines) processLine(line);
+        }
+        if (buffer.trim()) processLine(buffer);
 
         responseMsg = {
-          role: choice.message.role || "assistant",
-          content: choice.message.content || "",
-          tool_calls: toolCalls
+          role: "assistant",
+          content,
+          tool_calls: Object.values(streamedToolCalls)
+            .filter((tc: any) => tc.function?.name)
+            .map((tc: any) => ({
+              ...tc,
+              function: {
+                ...tc.function,
+                arguments: parseToolArguments(tc.function.arguments),
+              },
+            })),
         };
-        inputTokens = data.usage?.prompt_tokens || 0;
-        outputTokens = data.usage?.completion_tokens || 0;
         costUsd = 0;
       } else {
         // Ollama Flow
@@ -365,7 +506,7 @@ Instructions for updating the plan and tasks:
           body: JSON.stringify({
             model: settings.ollamaModel,
             messages: payloadMessages,
-            stream: false,
+            stream: true,
             tools: TOOLS_SCHEMA,
             options: {
               num_predict: 4096,
@@ -381,10 +522,48 @@ Instructions for updating the plan and tasks:
           );
         }
 
-        const data = await res.json();
-        responseMsg = data.message;
-        inputTokens = data.prompt_eval_count || 0;
-        outputTokens = data.eval_count || 0;
+        const reader = res.body?.getReader();
+        if (!reader) throw new Error("Ollama response stream is unavailable");
+
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let content = "";
+        let toolCalls: any[] = [];
+
+        const processLine = (line: string) => {
+          const trimmed = line.trim();
+          if (!trimmed) return;
+          const data = JSON.parse(trimmed);
+          const message = data.message || {};
+
+          if (message.content) {
+            content += message.content;
+            updateStreamedAssistant({ content });
+          }
+
+          if (Array.isArray(message.tool_calls) && message.tool_calls.length > 0) {
+            toolCalls = message.tool_calls;
+          }
+
+          inputTokens = data.prompt_eval_count || inputTokens;
+          outputTokens = data.eval_count || outputTokens;
+        };
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+          for (const line of lines) processLine(line);
+        }
+        if (buffer.trim()) processLine(buffer);
+
+        responseMsg = {
+          role: "assistant",
+          content,
+          tool_calls: toolCalls,
+        };
         costUsd = 0;
       }
 
@@ -393,12 +572,12 @@ Instructions for updating the plan and tasks:
         const invocations = rawInvs.map((tc: any) => ({
           id: Math.random().toString(36).substring(7),
           name: tc.function.name,
-          args: tc.function.arguments,
+          args: parseToolArguments(tc.function.arguments),
           status: "running" as const,
         }));
 
         const asstMsg: ChatMessage = {
-          id: Math.random().toString(36),
+          id: streamedAssistantId || Math.random().toString(36),
           role: "assistant",
           content: responseMsg.content || "",
           toolInvocations: invocations,
@@ -408,7 +587,19 @@ Instructions for updating the plan and tasks:
           costUsd
         };
 
-        updateLog((prev) => [...prev, asstMsg]);
+        if (streamedAssistantId) {
+          updateLog((prev) => {
+            const copy = [...prev];
+            const msgIdx = copy.findIndex((m) => m.id === asstMsg.id);
+            if (msgIdx !== -1) {
+              copy[msgIdx] = asstMsg;
+              return copy;
+            }
+            return [...copy, asstMsg];
+          });
+        } else {
+          updateLog((prev) => [...prev, asstMsg]);
+        }
         iterMessages = [...iterMessages, asstMsg];
 
         const completedInvocations = [...invocations];
@@ -487,7 +678,7 @@ Instructions for updating the plan and tasks:
         iterMessages = [...iterMessages, toolResultMsg];
       } else {
         const finalMsg: ChatMessage = {
-          id: Math.random().toString(36),
+          id: streamedAssistantId || Math.random().toString(36),
           role: "assistant",
           content: responseMsg.content,
           geminiParts: responseMsg.geminiParts,
@@ -495,7 +686,37 @@ Instructions for updating the plan and tasks:
           outputTokens,
           costUsd
         };
-        updateLog((prev) => [...prev, finalMsg]);
+        if (streamedAssistantId) {
+          updateLog((prev) => {
+            const copy = [...prev];
+            const msgIdx = copy.findIndex((m) => m.id === finalMsg.id);
+            if (msgIdx !== -1) {
+              copy[msgIdx] = finalMsg;
+              return copy;
+            }
+            return [...copy, finalMsg];
+          });
+        } else {
+          updateLog((prev) => [...prev, finalMsg]);
+        }
+
+        if (forcedContinuationCount < 4 && looksLikeUnexecutedContinuation(responseMsg.content || "")) {
+          forcedContinuationCount++;
+          const continuationMsg: ChatMessage = {
+            id: Math.random().toString(36),
+            role: "system",
+            hidden: true,
+            content: `[INTERNAL AUTONOMY GUARD]
+Your previous assistant message promised a next implementation/review step but did not call any tools.
+Do not narrate future work as a final answer. Execute the promised step now using the appropriate tools.
+If you mentioned specific files, inspect or edit those files now. If the step is complete, run verification or move to the next concrete task.
+Only stop if the overall user goal is complete, verified, or genuinely blocked.`,
+          };
+          updateLog((prev) => [...prev, continuationMsg]);
+          iterMessages = [...iterMessages, finalMsg, continuationMsg];
+          continue;
+        }
+
         break;
       }
     }

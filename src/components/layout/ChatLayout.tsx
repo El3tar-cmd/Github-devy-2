@@ -19,10 +19,34 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({ activeTab }) => {
 
   const [inputStr, setInputStr] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollPaneRef = useRef<HTMLDivElement>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
+  const shouldStickToBottomRef = useRef(true);
+  const providerReady =
+    settings.apiProvider === "ollama"
+      ? Boolean(settings.ollamaModel)
+      : settings.apiProvider === "lmstudio"
+        ? Boolean(settings.lmStudioModel)
+        : Boolean(settings.geminiApiKey);
 
   useEffect(() => {
+    if (!shouldStickToBottomRef.current) return;
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isRunning]);
+
+  const handleScroll = () => {
+    const pane = scrollPaneRef.current;
+    if (!pane) return;
+    const distanceFromBottom = pane.scrollHeight - pane.scrollTop - pane.clientHeight;
+    shouldStickToBottomRef.current = distanceFromBottom < 140;
+  };
+
+  useEffect(() => {
+    const composer = composerRef.current;
+    if (!composer) return;
+    composer.style.height = "0px";
+    composer.style.height = `${Math.min(composer.scrollHeight, 160)}px`;
+  }, [inputStr]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -31,8 +55,24 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({ activeTab }) => {
       return;
     }
     if (!inputStr.trim()) return;
-    sendMessage(inputStr.trim());
+    shouldStickToBottomRef.current = true;
+    sendMessage(inputStr);
     setInputStr("");
+  };
+
+  const handleComposerKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key !== "Enter") return;
+
+    if (e.shiftKey) {
+      return;
+    }
+
+    if (e.nativeEvent.isComposing) {
+      return;
+    }
+
+    e.preventDefault();
+    e.currentTarget.form?.requestSubmit();
   };
 
   return (
@@ -41,7 +81,11 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({ activeTab }) => {
         activeTab === "chat" ? "flex" : "hidden lg:flex"
       } lg:border-r border-white/5 bg-[#0b0b0e]`}
     >
-      <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-6 scroll-smooth pb-40">
+      <div
+        ref={scrollPaneRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-6 scroll-smooth pb-40"
+      >
         <div className="max-w-3xl mx-auto space-y-6">
           {messages.length === 0 && (
             <div className="h-64 flex flex-col items-center justify-center text-slate-500 space-y-4">
@@ -90,27 +134,27 @@ export const ChatLayout: React.FC<ChatLayoutProps> = ({ activeTab }) => {
         </div>
         <form
           onSubmit={handleSubmit}
-          className="relative flex items-center bg-[#1e1e24] border border-white/10 rounded-2xl shadow-[0_10px_40px_rgba(0,0,0,0.5)] overflow-hidden transition-all focus-within:ring-2 focus-within:ring-emerald-500/50 focus-within:border-emerald-500/30"
+          className="relative flex items-end bg-[#1e1e24] border border-white/10 rounded-2xl shadow-[0_10px_40px_rgba(0,0,0,0.5)] overflow-hidden transition-all focus-within:ring-2 focus-within:ring-emerald-500/50 focus-within:border-emerald-500/30"
         >
-          <input
+          <textarea
+            ref={composerRef}
             value={inputStr}
             onChange={(e) => setInputStr(e.target.value)}
-            disabled={
-              isRunning ||
-              (settings.apiProvider === "ollama" ? !settings.ollamaModel : !settings.geminiApiKey)
-            }
+            onKeyDown={handleComposerKeyDown}
+            disabled={isRunning || !providerReady}
             placeholder={
               isRunning ? "Agent is working..." : "Ask the agent to modify code..."
             }
-            className="flex-1 bg-transparent py-4 pl-6 pr-14 text-white outline-none placeholder-slate-500 disabled:opacity-50 text-sm leading-relaxed"
+            rows={1}
+            className="flex-1 min-h-[56px] max-h-40 resize-none bg-transparent py-4 pl-5 md:pl-6 pr-14 text-white outline-none placeholder-slate-500 disabled:opacity-50 text-sm leading-relaxed overflow-y-auto whitespace-pre-wrap"
           />
           <button
             type="submit"
             disabled={
               (!inputStr.trim() && !isRunning) ||
-              (settings.apiProvider === "ollama" ? !settings.ollamaModel : !settings.geminiApiKey)
+              !providerReady
             }
-            className={`absolute right-3 p-2 rounded-xl transition-all ${
+            className={`absolute right-3 bottom-3 p-2 rounded-xl transition-all ${
               isRunning
                 ? "bg-rose-500 hover:bg-rose-600 text-white shadow-[0_0_15px_rgba(244,63,94,0.4)]"
                 : "bg-emerald-500 hover:bg-emerald-400 text-black disabled:opacity-30 disabled:hover:bg-emerald-500"

@@ -303,7 +303,7 @@ export function AIBuilder({ workspaceId, onRefreshWorkspace }: AIBuilderProps) {
 
   const handleDeletePage = (index: number) => {
     if (pages.length <= 1) {
-      alert("Cannot delete the last page in the project.");
+      import("../lib/toast").then(({ toast }) => toast.warning("Cannot delete the last page in the project."));
       return;
     }
     if (!window.confirm(`Are you sure you want to delete page "${pages[index].name}"?`)) return;
@@ -436,7 +436,7 @@ Instructions:
         setViewMode("split");
       }
     } catch (e: any) {
-      alert("Error generating UI: " + e.message + ". Check your provider settings.");
+      import("../lib/toast").then(({ toast }) => toast.error("Error generating UI: " + e.message + ". Check your provider settings."));
     } finally {
       setGenerating(false);
     }
@@ -468,10 +468,10 @@ Instructions:
         setTimeout(() => setSaveSuccess(false), 3000);
       } else {
         const data = await res.json();
-        alert("Failed to save: " + data.error);
+        import("../lib/toast").then(({ toast }) => toast.error("Failed to save: " + data.error));
       }
     } catch (e: any) {
-      alert("Error saving: " + e.message);
+      import("../lib/toast").then(({ toast }) => toast.error("Error saving: " + e.message));
     } finally {
       setSaving(false);
     }
@@ -539,10 +539,10 @@ ${agentInstructions}
         setTimeout(() => setAgentSaveSuccess(false), 3000);
       } else {
         const data = await res.json();
-        alert("Failed to save instructions: " + data.error);
+        import("../lib/toast").then(({ toast }) => toast.error("Failed to save instructions: " + data.error));
       }
     } catch (e: any) {
-      alert("Error saving: " + e.message);
+      import("../lib/toast").then(({ toast }) => toast.error("Error saving: " + e.message));
     } finally {
       setAgentSaving(false);
     }
@@ -860,7 +860,7 @@ ${agentInstructions}
                   <button
                     onClick={() => {
                       navigator.clipboard.writeText(htmlCode);
-                      alert("Code copied to clipboard!");
+                      import("../lib/toast").then(({ toast }) => toast.success("Code copied to clipboard!"));
                     }}
                     className="px-2 py-1 bg-[#1e1e24] hover:bg-[#2a2a32] border border-white/10 text-slate-300 hover:text-white rounded-lg text-[10px] font-bold transition-all"
                   >

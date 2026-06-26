@@ -9,6 +9,7 @@ import { AgentProvider, useAgentContext } from "./contexts/AgentContext";
 import { SidebarLayout } from "./components/layout/SidebarLayout";
 import { ChatLayout } from "./components/layout/ChatLayout";
 import { IdeLayout } from "./components/layout/IdeLayout";
+import { ToastContainer } from "./components/ToastContainer";
 
 function MainApp() {
   const {
@@ -197,6 +198,7 @@ export default function App() {
     <WorkspaceProvider>
       <AgentProvider>
         <MainApp />
+        <ToastContainer />
       </AgentProvider>
     </WorkspaceProvider>
   );

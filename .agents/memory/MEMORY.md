@@ -1,0 +1,3 @@
+- [RAG incremental indexing](rag-design.md) — index is incremental by SHA1 file hash; only changed files get re-embedded; results are token-budgeted (18k chars total, 1.8k per chunk).
+- [Sub-agent memory](subagent-memory.md) — SubAgentRunner now has sliding-window summarization (trigger=12, keep=6) matching the main agent loop; also truncates oversized tool results to 4k chars.
+- [Toast system](toast-system.md) — all alert() calls replaced with src/lib/toast.ts (event-based singleton) + ToastContainer in App.tsx; use `import("../lib/toast").then(({ toast }) => toast.error(...))` pattern in non-hook contexts.

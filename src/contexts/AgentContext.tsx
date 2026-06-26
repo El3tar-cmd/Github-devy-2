@@ -147,10 +147,10 @@ export const AgentProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         fetchTree();
         fetchWorkspaces();
       } else {
-        alert("Failed to clone: " + res.error);
+        import("../lib/toast").then(({ toast }) => toast.error("Failed to clone: " + res.error));
       }
     } catch (e: any) {
-      alert("Error initializing repository: " + e.message);
+      import("../lib/toast").then(({ toast }) => toast.error("Error initializing repository: " + e.message));
     } finally {
       setInitLoading(false);
     }

@@ -7,6 +7,10 @@ import { getAgentTaskManager } from "./TaskManager";
 
 const MAX_MANAGED_AGENTS = 50;
 const DEFAULT_MAX_CONCURRENT_AGENTS = 8;
+/** Max automatic retries for a failed sub-agent (non-abort failures only) */
+const MAX_AUTO_RETRIES = 2;
+/** Backoff delays (ms) per retry attempt: [1st retry, 2nd retry] */
+const RETRY_DELAYS_MS = [1500, 4000];
 
 type QueuedRun = {
   agentId: string;
@@ -19,6 +23,8 @@ type AgentRunOptions = {
   timeoutSeconds?: number;
   onProgress?: (agentId: string, status: string) => void;
   createTaskRecord?: boolean;
+  /** Max retry attempts on non-abort failure. Defaults to MAX_AUTO_RETRIES */
+  maxRetries?: number;
 };
 
 function makeAgentId(label?: string): string {
@@ -42,7 +48,6 @@ function normalizeAgentName(name: string) {
 function deriveAgentName(typeName: string, task?: string) {
   const base = AGENT_REGISTRY[typeName]?.name || "Agent";
   if (!task) return base;
-
   const stopWords = new Set([
     "the", "and", "for", "with", "from", "that", "this", "into", "about", "using",
     "implement", "create", "update", "fix", "review", "analyze", "task", "agent",
@@ -50,14 +55,30 @@ function deriveAgentName(typeName: string, task?: string) {
   const words = task
     .replace(/[`"'()[\]{}.,:;!?/\\|<>]+/g, " ")
     .split(/\s+/)
-    .map((word) => word.trim().toLowerCase())
-    .filter((word) => word.length > 2 && !stopWords.has(word))
+    .map((w) => w.trim().toLowerCase())
+    .filter((w) => w.length > 2 && !stopWords.has(w))
     .slice(0, 4);
-
-  const suffix = words
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
+  const suffix = words.map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
   return suffix ? `${base} ${suffix}` : base;
+}
+
+/** Dispatch a DOM event so the main chat can surface background results */
+function dispatchSubAgentCompleted(instance: SubAgentInstance) {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(
+    new CustomEvent("agent-subagent-completed", {
+      detail: {
+        agentId: instance.id,
+        agentName: instance.displayName,
+        agentType: instance.typeName,
+        taskId: instance.taskId,
+        status: instance.status,
+        result: instance.result,
+        error: instance.lastError,
+        durationMs: instance.completedAt ? instance.completedAt - (instance.startedAt ?? 0) : undefined,
+      },
+    })
+  );
 }
 
 export class AgentOrchestrator {
@@ -166,6 +187,8 @@ export class AgentOrchestrator {
     }
 
     const taskManager = getAgentTaskManager();
+    const maxRetries = options.maxRetries ?? MAX_AUTO_RETRIES;
+
     const taskRecord = options.createTaskRecord === false
       ? undefined
       : taskManager.create({
@@ -186,28 +209,18 @@ export class AgentOrchestrator {
     instance.completedAt = undefined;
     instance.taskId = taskRecord?.id;
 
-    const execute = (resolve: (value: SubAgentInstance) => void) => {
-      this.runningCount++;
+    /** Run one attempt; returns the result or throws */
+    const runOnce = (taskDescription: string, attemptNum: number): Promise<{ result: string; messages: any[] }> => {
       instance.status = "running";
       instance.startedAt = Date.now();
       instance.runCount = (instance.runCount || 0) + 1;
-      if (taskRecord) taskManager.update(taskRecord.id, { status: "running", progress: "Starting" });
 
-      let timeoutId: any;
-      if (options.timeoutSeconds) {
-        timeoutId = setTimeout(() => {
-          ac.abort();
-          instance.status = "error";
-          instance.lastError = `Timeout: Sub-agent execution exceeded the limit of ${options.timeoutSeconds} seconds.`;
-          instance.result = instance.lastError;
-          if (taskRecord) taskManager.update(taskRecord.id, { status: "error", error: instance.lastError, progress: "Timed out" });
-          options.onProgress?.(instance.id, "timeout");
-        }, options.timeoutSeconds * 1000);
-      }
+      const attemptLabel = maxRetries > 0 ? ` (attempt ${attemptNum}/${maxRetries + 1})` : "";
+      if (taskRecord) taskManager.update(taskRecord.id, { status: "running", progress: `Starting${attemptLabel}` });
 
-      runSubAgent(
+      return runSubAgent(
         instance.definition,
-        task,
+        taskDescription,
         settings,
         workspaceId,
         toolsSchema,
@@ -216,7 +229,7 @@ export class AgentOrchestrator {
           instance.messages = msgs;
           if (taskRecord) {
             taskManager.update(taskRecord.id, {
-              progress: status,
+              progress: attemptNum > 1 ? `[Retry ${attemptNum - 1}] ${status}` : status,
               metadata: { ...taskManager.get(taskRecord.id)?.metadata, messageCount: msgs.length },
             });
           }
@@ -224,35 +237,102 @@ export class AgentOrchestrator {
         },
         ac.signal,
         options.maxIterations
-      ).then(({ result, messages }) => {
-        if (instance.status === "running") {
-          instance.status = "completed";
-          instance.result = result;
-          instance.messages = messages;
-          instance.completedAt = Date.now();
-          if (taskRecord) taskManager.update(taskRecord.id, { status: "completed", result, progress: "Completed" });
-        }
-      }).catch((err: any) => {
-        if (instance.status === "running" || instance.status === "queued") {
-          instance.status = ac.signal.aborted ? "cancelled" : "error";
-          instance.lastError = ac.signal.aborted ? "Cancelled" : `Error: ${err.message}`;
+      );
+    };
+
+    const execute = (resolve: (value: SubAgentInstance) => void) => {
+      this.runningCount++;
+
+      let timeoutId: any;
+      if (options.timeoutSeconds) {
+        timeoutId = setTimeout(() => {
+          ac.abort();
+          instance.status = "error";
+          instance.lastError = `Timeout: exceeded ${options.timeoutSeconds}s limit.`;
           instance.result = instance.lastError;
           instance.completedAt = Date.now();
-          if (taskRecord) {
-            taskManager.update(taskRecord.id, {
-              status: instance.status === "cancelled" ? "cancelled" : "error",
-              error: instance.lastError,
-              progress: instance.status === "cancelled" ? "Cancelled" : "Failed",
-            });
-          }
+          if (taskRecord) taskManager.update(taskRecord.id, { status: "error", error: instance.lastError, progress: "Timed out" });
+          options.onProgress?.(instance.id, "timeout");
+          dispatchSubAgentCompleted(instance);
+        }, options.timeoutSeconds * 1000);
+      }
+
+      /** Recursive retry runner */
+      const attempt = (attemptNum: number, previousError?: string): void => {
+        // If aborted mid-retry, stop immediately
+        if (ac.signal.aborted) {
+          instance.status = "cancelled";
+          instance.lastError = "Cancelled";
+          instance.result = "Cancelled";
+          instance.completedAt = Date.now();
+          if (taskRecord) taskManager.update(taskRecord.id, { status: "cancelled", progress: "Cancelled", error: "Cancelled" });
+          dispatchSubAgentCompleted(instance);
+          return;
         }
-      }).finally(() => {
-        if (timeoutId) clearTimeout(timeoutId);
-        this.runningCount = Math.max(0, this.runningCount - 1);
-        this.abortControllers.delete(instance.id);
-        resolve(instance);
-        this.pumpQueue();
-      });
+
+        // Build task description — on retries, prefix with error context
+        const taskDescription = previousError
+          ? `[RETRY — Previous attempt failed with: "${previousError}". Study that error carefully and try a different approach.]\n\n${task}`
+          : task;
+
+        runOnce(taskDescription, attemptNum)
+          .then(({ result, messages }) => {
+            if (instance.status === "running") {
+              instance.status = "completed";
+              instance.result = result;
+              instance.messages = messages;
+              instance.completedAt = Date.now();
+              const retryNote = attemptNum > 1 ? ` (succeeded on retry ${attemptNum - 1})` : "";
+              if (taskRecord) taskManager.update(taskRecord.id, { status: "completed", result, progress: `Completed${retryNote}` });
+              dispatchSubAgentCompleted(instance);
+            }
+          })
+          .catch((err: any) => {
+            const isAborted = ac.signal.aborted || err.name === "AbortError";
+
+            if (isAborted) {
+              instance.status = "cancelled";
+              instance.lastError = "Cancelled";
+              instance.result = "Cancelled";
+              instance.completedAt = Date.now();
+              if (taskRecord) taskManager.update(taskRecord.id, { status: "cancelled", progress: "Cancelled", error: "Cancelled" });
+              dispatchSubAgentCompleted(instance);
+              return;
+            }
+
+            const canRetry = attemptNum <= maxRetries;
+            if (canRetry) {
+              const delay = RETRY_DELAYS_MS[attemptNum - 1] ?? RETRY_DELAYS_MS[RETRY_DELAYS_MS.length - 1];
+              const errorMsg = err.message ?? String(err);
+              if (taskRecord) taskManager.update(taskRecord.id, {
+                status: "running",
+                progress: `Attempt ${attemptNum} failed — retrying in ${Math.round(delay / 1000)}s... (${errorMsg.slice(0, 80)})`,
+              });
+              options.onProgress?.(instance.id, `retry-${attemptNum}`);
+              setTimeout(() => attempt(attemptNum + 1, errorMsg), delay);
+            } else {
+              // All retries exhausted — mark as error
+              instance.status = "error";
+              instance.lastError = `Failed after ${attemptNum} attempt(s): ${err.message ?? err}`;
+              instance.result = instance.lastError;
+              instance.completedAt = Date.now();
+              if (taskRecord) taskManager.update(taskRecord.id, { status: "error", error: instance.lastError, progress: `Failed (${attemptNum} attempts)` });
+              dispatchSubAgentCompleted(instance);
+            }
+          })
+          .finally(() => {
+            // Only clean up after the LAST attempt completes (not on mid-retry)
+            const isDone = ["completed", "error", "cancelled"].includes(instance.status);
+            if (!isDone) return; // more retries pending
+            if (timeoutId) clearTimeout(timeoutId);
+            this.runningCount = Math.max(0, this.runningCount - 1);
+            this.abortControllers.delete(instance.id);
+            resolve(instance);
+            this.pumpQueue();
+          });
+      };
+
+      attempt(1);
     };
 
     return new Promise((resolve) => {
@@ -263,6 +343,7 @@ export class AgentOrchestrator {
           instance.status = "cancelled";
           instance.completedAt = Date.now();
           if (taskRecord) taskManager.update(taskRecord.id, { status: "cancelled", progress: "Cancelled before start" });
+          dispatchSubAgentCompleted(instance);
           resolve(instance);
         },
       };
@@ -284,13 +365,15 @@ export class AgentOrchestrator {
     onProgress?: (agentId: string, status: string) => void,
     maxIterations?: number,
     timeoutSeconds?: number,
-    displayName?: string
+    displayName?: string,
+    maxRetries?: number
   ): Promise<SubAgentInstance> {
     const instance = this.createAgent(typeName, displayName, { currentTask: task });
     return this.runManagedAgent(instance, task, settings, workspaceId, toolsSchema, executeToolCallFn, {
       maxIterations,
       timeoutSeconds,
       onProgress,
+      maxRetries,
     });
   }
 
@@ -309,7 +392,7 @@ export class AgentOrchestrator {
   }
 
   async invokeParallel(
-    tasks: Array<{ typeName: string; task: string; name?: string; maxIterations?: number; timeoutSeconds?: number }>,
+    tasks: Array<{ typeName: string; task: string; name?: string; maxIterations?: number; timeoutSeconds?: number; maxRetries?: number }>,
     settings: Settings,
     workspaceId: string,
     toolsSchema: any[],
@@ -317,7 +400,7 @@ export class AgentOrchestrator {
     onProgress?: (agentId: string, status: string) => void
   ): Promise<SubAgentInstance[]> {
     const promises = tasks.map((t) =>
-      this.invokeSubAgent(t.typeName, t.task, settings, workspaceId, toolsSchema, executeToolCallFn, onProgress, t.maxIterations, t.timeoutSeconds, t.name)
+      this.invokeSubAgent(t.typeName, t.task, settings, workspaceId, toolsSchema, executeToolCallFn, onProgress, t.maxIterations, t.timeoutSeconds, t.name, t.maxRetries)
     );
     return Promise.all(promises);
   }

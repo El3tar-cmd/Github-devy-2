@@ -1,0 +1,1814 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Github-devy - Interactive Experience</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Fira+Code:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: 'Outfit', sans-serif;
+      background-color: #09090b;
+      color: #e2e8f0;
+      overflow: hidden;
+    }
+    
+    .font-space { font-family: 'Space Grotesk', sans-serif; }
+    .font-mono { font-family: 'Fira Code', monospace; }
+    
+    /* Custom Scrollbar */
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: rgba(255, 255, 255, 0.02);
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 4px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+      background: rgba(16, 185, 129, 0.3);
+    }
+    
+    /* Animations */
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    @keyframes slideIn {
+      from { transform: translateX(-100%); }
+      to { transform: translateX(0); }
+    }
+    
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+    
+    @keyframes typing {
+      from { width: 0; }
+      to { width: 100%; }
+    }
+    
+    @keyframes blink {
+      0%, 100% { border-color: transparent; }
+      50% { border-color: #10b981; }
+    }
+    
+    .animate-fade-in {
+      animation: fadeIn 0.3s ease-out forwards;
+    }
+    
+    .animate-slide-in {
+      animation: slideIn 0.3s ease-out forwards;
+    }
+    
+    .animate-pulse-slow {
+      animation: pulse 2s ease-in-out infinite;
+    }
+    
+    .typing-cursor {
+      border-right: 2px solid #10b981;
+      animation: blink 1s step-end infinite;
+    }
+    
+    /* Glass Effect */
+    .glass {
+      background: rgba(255, 255, 255, 0.03);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    
+    .glass-dark {
+      background: rgba(0, 0, 0, 0.3);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    
+    /* Terminal Colors */
+    .terminal-green { color: #10b981; }
+    .terminal-blue { color: #3b82f6; }
+    .terminal-yellow { color: #eab308; }
+    .terminal-red { color: #ef4444; }
+    .terminal-purple { color: #a855f7; }
+    .terminal-cyan { color: #06b6d4; }
+    
+    /* Interactive Elements */
+    .interactive-hover {
+      transition: all 0.2s ease;
+    }
+    .interactive-hover:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(16, 185, 129, 0.2);
+    }
+    
+    .active-tab {
+      background: rgba(16, 185, 129, 0.1);
+      border-color: rgba(16, 185, 129, 0.3);
+      color: #10b981;
+    }
+    
+    /* Code Highlighting */
+    .code-keyword { color: #c792ea; }
+    .code-string { color: #c3e88d; }
+    .code-function { color: #82aaff; }
+    .code-comment { color: #546e7a; }
+    .code-number { color: #f78c6c; }
+    
+    /* Status Indicators */
+    .status-online {
+      background: #10b981;
+      box-shadow: 0 0 10px rgba(16, 185, 129, 0.5);
+    }
+    
+    .status-offline {
+      background: #6b7280;
+    }
+    
+    /* File Tree */
+    .file-item:hover {
+      background: rgba(255, 255, 255, 0.05);
+    }
+    
+    .folder-item {
+      color: #fbbf24;
+    }
+    
+    .file-ts { color: #3b82f6; }
+    .file-js { color: #eab308; }
+    .file-html { color: #ef4444; }
+    .file-css { color: #06b6d4; }
+    .file-json { color: #f97316; }
+    .file-md { color: #a855f7; }
+    
+    /* Chat Messages */
+    .message-user {
+      background: linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(16, 185, 129, 0.05));
+      border-left: 3px solid #10b981;
+    }
+    
+    .message-ai {
+      background: linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(59, 130, 246, 0.05));
+      border-left: 3px solid #3b82f6;
+    }
+    
+    /* Progress Bar */
+    .progress-bar {
+      background: linear-gradient(90deg, #10b981, #3b82f6);
+      transition: width 0.3s ease;
+    }
+    
+    /* Tooltip */
+    .tooltip {
+      position: relative;
+    }
+    
+    .tooltip::after {
+      content: attr(data-tooltip);
+      position: absolute;
+      bottom: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #1f2937;
+      color: white;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      white-space: nowrap;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s;
+    }
+    
+    .tooltip:hover::after {
+      opacity: 1;
+    }
+    
+    /* Loading Spinner */
+    .spinner {
+      border: 2px solid rgba(255, 255, 255, 0.1);
+      border-top-color: #10b981;
+      border-radius: 50%;
+      width: 20px;
+      height: 20px;
+      animation: spin 1s linear infinite;
+    }
+    
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    
+    /* Notification Badge */
+    .notification-badge {
+      position: absolute;
+      top: -4px;
+      right: -4px;
+      background: #ef4444;
+      color: white;
+      border-radius: 50%;
+      width: 16px;
+      height: 16px;
+      font-size: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+  </style>
+</head>
+<body class="h-screen flex flex-col">
+  <!-- Loading Screen -->
+  <div id="loading-screen" class="fixed inset-0 bg-[#09090b] z-50 flex items-center justify-center">
+    <div class="text-center">
+      <div class="w-16 h-16 mx-auto mb-4 relative">
+        <div class="absolute inset-0 border-2 border-emerald-500/20 rounded-full"></div>
+        <div class="absolute inset-0 border-2 border-emerald-500 rounded-full border-t-transparent animate-spin"></div>
+        <div class="absolute inset-2 border-2 border-blue-500/20 rounded-full"></div>
+        <div class="absolute inset-2 border-2 border-blue-500 rounded-full border-t-transparent animate-spin" style="animation-direction: reverse; animation-duration: 1.5s;"></div>
+      </div>
+      <h1 class="text-2xl font-bold text-white mb-2 font-space">Github-devy</h1>
+      <p class="text-slate-400 text-sm">Loading your workspace...</p>
+      <div class="mt-4 w-48 h-1 bg-white/10 rounded-full overflow-hidden">
+        <div id="loading-progress" class="h-full bg-gradient-to-r from-emerald-500 to-blue-500 rounded-full transition-all duration-300" style="width: 0%"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Application -->
+  <div id="app" class="flex-1 flex flex-col opacity-0 transition-opacity duration-500">
+    <!-- Header -->
+    <header class="h-14 border-b border-white/5 bg-[#0e0e11]/80 backdrop-blur-md flex items-center justify-between px-4 lg:px-6 shrink-0">
+      <div class="flex items-center gap-4">
+        <button id="sidebar-toggle" class="p-2 text-slate-400 hover:text-white transition-colors rounded-lg hover:bg-white/5">
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+          </svg>
+        </button>
+        <div class="flex items-center gap-2">
+          <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-500 to-blue-500 flex items-center justify-center">
+            <svg class="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/>
+            </svg>
+          </div>
+          <div>
+            <h1 class="font-semibold text-white font-space">Github-<span class="text-emerald-500">devy</span></h1>
+            <p class="text-[10px] text-slate-500">Interactive Developer Showcase</p>
+          </div>
+        </div>
+      </div>
+      
+      <div class="flex items-center gap-4">
+        <!-- Host Environment status -->
+        <div class="flex items-center gap-2 bg-[#15151a] px-3 py-1 rounded-lg border border-white/5">
+          <span class="text-[10px] uppercase font-semibold text-slate-500">Environment:</span>
+          <select id="simulated-env-select" class="bg-transparent text-[11px] font-mono text-emerald-400 outline-none cursor-pointer">
+            <option value="linux" class="bg-[#15151a]">Linux (bash)</option>
+            <option value="win32" class="bg-[#15151a]">Windows (cmd.exe)</option>
+            <option value="termux" class="bg-[#15151a]">Termux (android)</option>
+          </select>
+        </div>
+
+        <div class="hidden md:flex items-center gap-2 bg-[#1e1e24] px-3 py-1 rounded-lg border border-white/5">
+          <div class="w-2 h-2 rounded-full status-online animate-pulse"></div>
+          <span class="text-xs font-mono text-slate-400">Daemon Active</span>
+        </div>
+        
+        <button id="help-btn" class="p-2 text-slate-400 hover:text-white transition-colors rounded-lg hover:bg-white/5 relative">
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Content -->
+    <div class="flex-1 flex overflow-hidden">
+      <!-- Sidebar -->
+      <aside id="sidebar" class="w-64 border-r border-white/5 bg-[#0a0a0f] flex-shrink-0 flex flex-col transition-all duration-300">
+        <!-- Workspace Selector -->
+        <div class="p-4 border-b border-white/5">
+          <div class="flex items-center justify-between mb-3">
+            <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider font-space">Sandbox Projects</span>
+            <span class="bg-emerald-500/10 text-emerald-400 text-[9px] font-mono px-2 py-0.5 rounded border border-emerald-500/20">Active</span>
+          </div>
+          <select id="workspace-select" class="w-full bg-[#1e1e24] border border-white/5 text-white rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500/50 cursor-pointer font-space">
+            <option value="demo">Termux-Sandbox-Project</option>
+            <option value="react">Next-Portfolio-Site</option>
+            <option value="node">Stripe-API-Microservice</option>
+          </select>
+        </div>
+
+        <!-- Navigation -->
+        <nav class="flex-1 overflow-y-auto p-4 custom-scrollbar">
+          <div class="space-y-6">
+            <!-- Main Navigation -->
+            <div>
+              <h3 class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2 font-space">Main</h3>
+              <ul class="space-y-1">
+                <li>
+                  <button data-tab="chat" class="nav-btn w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-300 hover:text-white hover:bg-white/5 transition-all active-tab">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/>
+                    </svg>
+                    <span>AI Chat</span>
+                  </button>
+                </li>
+                <li>
+                  <button data-tab="editor" class="nav-btn w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-300 hover:text-white hover:bg-white/5 transition-all">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                    </svg>
+                    <span>Editor / Preview</span>
+                  </button>
+                </li>
+                <li>
+                  <button data-tab="terminal" class="nav-btn w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-300 hover:text-white hover:bg-white/5 transition-all">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                    </svg>
+                    <span>Terminal</span>
+                  </button>
+                </li>
+                <li>
+                  <button data-tab="browser" class="nav-btn w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-300 hover:text-white hover:bg-white/5 transition-all">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/>
+                    </svg>
+                    <span>Browser Preview</span>
+                  </button>
+                </li>
+              </ul>
+            </div>
+
+            <!-- Developer Tools -->
+            <div>
+              <h3 class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2 font-space">Workspace Tools</h3>
+              <ul class="space-y-1">
+                <li>
+                  <button data-tab="ast" class="nav-btn w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-300 hover:text-white hover:bg-white/5 transition-all">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z"/>
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z"/>
+                    </svg>
+                    <span>AST dependency Graph</span>
+                  </button>
+                </li>
+                <li>
+                  <button data-tab="sandbox" class="nav-btn w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-300 hover:text-white hover:bg-white/5 transition-all">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/>
+                    </svg>
+                    <span>API Sandbox Suite</span>
+                  </button>
+                </li>
+                <li>
+                  <button data-tab="debugger" class="nav-btn w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-300 hover:text-white hover:bg-white/5 transition-all">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                    </svg>
+                    <span>Autopilot Debugger</span>
+                  </button>
+                </li>
+                <li>
+                  <button data-tab="git" class="nav-btn w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-300 hover:text-white hover:bg-white/5 transition-all">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/>
+                    </svg>
+                    <span>Version Control (Git)</span>
+                  </button>
+                </li>
+              </ul>
+            </div>
+
+            <!-- AI Engine -->
+            <div>
+              <h3 class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2 font-space">AI Engine</h3>
+              <ul class="space-y-1">
+                <li>
+                  <button data-tab="trajectory" class="nav-btn w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-300 hover:text-white hover:bg-white/5 transition-all">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"/>
+                    </svg>
+                    <span>Trajectory Tracer</span>
+                  </button>
+                </li>
+                <li>
+                  <button data-tab="planner" class="nav-btn w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-300 hover:text-white hover:bg-white/5 transition-all">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
+                    </svg>
+                    <span>Autonomous Planner</span>
+                  </button>
+                </li>
+                <li>
+                  <button data-tab="settings" class="nav-btn w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-300 hover:text-white hover:bg-white/5 transition-all">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                    </svg>
+                    <span>Workstation Setup</span>
+                  </button>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </nav>
+
+        <!-- Status Bar -->
+        <div class="p-4 border-t border-white/5 bg-[#08080c]">
+          <div class="flex items-center justify-between text-[11px] text-slate-500">
+            <div class="flex items-center gap-2">
+              <div class="w-2 h-2 rounded-full status-online animate-pulse-slow"></div>
+              <span id="system-status-text">Sys OS: Linux</span>
+            </div>
+            <span class="font-mono text-emerald-500">PORT: 9876</span>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Main Panel -->
+      <main class="flex-1 flex flex-col overflow-hidden">
+        <!-- Tab Bar -->
+        <div class="h-10 border-b border-white/5 bg-[#0e0e11]/50 flex items-center px-4 gap-2 shrink-0 overflow-x-auto custom-scrollbar">
+          <button class="tab-btn px-3 py-1 rounded-lg text-xs font-medium text-white bg-emerald-500/10 border border-emerald-500/20" data-tab="chat">
+            AI Chat
+          </button>
+          <button class="tab-btn px-3 py-1 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-white/5 transition-all" data-tab="editor">
+            Editor
+          </button>
+          <button class="tab-btn px-3 py-1 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-white/5 transition-all" data-tab="terminal">
+            Terminal
+          </button>
+          <button class="tab-btn px-3 py-1 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-white/5 transition-all" data-tab="browser">
+            Browser
+          </button>
+          <button class="tab-btn px-3 py-1 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-white/5 transition-all" data-tab="ast">
+            AST Graph
+          </button>
+          <button class="tab-btn px-3 py-1 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-white/5 transition-all" data-tab="sandbox">
+            Sandbox Mocks
+          </button>
+          <button class="tab-btn px-3 py-1 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-white/5 transition-all" data-tab="debugger">
+            Autopilot
+          </button>
+          <button class="tab-btn px-3 py-1 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-white/5 transition-all" data-tab="trajectory">
+            Trajectory Trace
+          </button>
+          <button class="tab-btn px-3 py-1 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-white/5 transition-all" data-tab="settings">
+            Settings
+          </button>
+        </div>
+
+        <!-- Content Area -->
+        <div class="flex-1 overflow-hidden relative">
+          <!-- Chat Panel -->
+          <div id="chat-panel" class="panel absolute inset-0 flex flex-col">
+            <div class="flex-1 overflow-y-auto p-4 custom-scrollbar space-y-4">
+              <!-- Welcome Message -->
+              <div class="message-ai p-4 rounded-lg animate-fade-in">
+                <div class="flex items-start gap-3">
+                  <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-500 to-blue-500 flex items-center justify-center shrink-0">
+                    <svg class="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                    </svg>
+                  </div>
+                  <div class="flex-1">
+                    <div class="flex items-center gap-2 mb-2">
+                      <span class="font-semibold text-white">Devy AI Agent</span>
+                      <span class="text-[10px] text-slate-500">Active</span>
+                    </div>
+                    <p class="text-sm text-slate-300 leading-relaxed">
+                      Welcome to Github-devy! I'm your autonomous assistant. I can execute commands, edit code, index files, and heal program errors.
+                    </p>
+                    <div class="mt-3 p-3 bg-black/40 rounded-lg border border-white/5 text-xs text-slate-400 space-y-2">
+                      <p class="font-semibold text-slate-300">💡 Interactive Quick Simulator Triggers:</p>
+                      <ul class="list-disc pl-4 space-y-1">
+                        <li>Type <span class="text-emerald-400 font-mono">"create dashboard page"</span> ➔ Devy will spawn an agent loop, update files, write React code, check tasks, and show the layout in browser!</li>
+                        <li>Type <span class="text-emerald-400 font-mono">"diagnose script error"</span> ➔ Devy triggers the terminal autopilot debugger, shows crash trace logs, applies fixes, and completes successfully!</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Input Area -->
+            <div class="p-4 border-t border-white/5 bg-[#0e0e11]/50 shrink-0">
+              <div class="flex gap-3">
+                <div class="flex-1 relative">
+                  <textarea id="chat-input" class="w-full bg-[#1e1e24] border border-white/5 text-white rounded-xl px-4 py-3 pr-12 outline-none focus:ring-2 focus:ring-emerald-500/50 resize-none text-sm leading-relaxed custom-scrollbar" rows="1" placeholder="Ask me anything about your project..."></textarea>
+                  <button class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white transition-colors">
+                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                  </button>
+                </div>
+                <button id="send-btn" class="px-4 py-3 bg-emerald-500 hover:bg-emerald-400 text-black rounded-xl text-sm font-semibold transition-all flex items-center gap-2 interactive-hover">
+                  <span>Send</span>
+                  <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+                  </svg>
+                </button>
+              </div>
+              <div class="flex items-center gap-4 mt-3 text-[11px] text-slate-500">
+                <span>Press Enter to send</span>
+                <span id="active-llm-provider-text" class="ml-auto font-mono text-slate-400">LLM Provider: Gemini 2.5 Flash</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Editor Panel -->
+          <div id="editor-panel" class="panel absolute inset-0 hidden">
+            <div class="h-full flex">
+              <!-- File Tree -->
+              <div id="editor-file-tree" class="w-64 border-r border-white/5 bg-[#0a0a0f] flex flex-col transition-all duration-300">
+                <div class="p-3 border-b border-white/5">
+                  <input type="text" placeholder="Search files..." class="w-full bg-[#1e1e24] border border-white/5 text-white rounded-lg px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-emerald-500/50">
+                </div>
+                <div class="flex-1 overflow-y-auto p-2 custom-scrollbar">
+                  <div class="file-tree">
+                    <div class="file-item flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer" onclick="clickTreeFolder('src-tree-node')">
+                      <svg class="w-4 h-4 folder-item" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+                      </svg>
+                      <span class="text-sm text-slate-300 font-mono">src</span>
+                    </div>
+                    <div id="src-tree-node" class="ml-4 space-y-1">
+                      <div class="file-item flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer bg-white/5" onclick="selectEditorFile('src/App.tsx')">
+                        <svg class="w-4 h-4 file-ts" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                        </svg>
+                        <span class="text-sm text-slate-300 font-mono">App.tsx</span>
+                      </div>
+                      <div id="simulated-dashboard-tree-item" class="hidden file-item flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer" onclick="selectEditorFile('src/components/Dashboard.tsx')">
+                        <svg class="w-4 h-4 file-ts" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                        </svg>
+                        <span class="text-sm text-emerald-400 font-mono">Dashboard.tsx</span>
+                      </div>
+                      <div class="file-item flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer" onclick="selectEditorFile('src/main.tsx')">
+                        <svg class="w-4 h-4 file-ts" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                        </svg>
+                        <span class="text-sm text-slate-300 font-mono">main.tsx</span>
+                      </div>
+                    </div>
+                    <div class="file-item flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer mt-1" onclick="selectEditorFile('package.json')">
+                      <svg class="w-4 h-4 file-json" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                      </svg>
+                      <span class="text-sm text-slate-300 font-mono">package.json</span>
+                    </div>
+                    <div class="file-item flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer mt-1" onclick="selectEditorFile('README.md')">
+                      <svg class="w-4 h-4 file-md" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                      </svg>
+                      <span class="text-sm text-slate-300 font-mono">README.md</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Code Editor -->
+              <div class="flex-1 flex flex-col bg-[#0e0e11]">
+                <div class="h-10 border-b border-white/5 bg-[#0e0e11]/50 flex items-center px-4 gap-2">
+                  <!-- Mobile sidebar toggle -->
+                  <button onclick="toggleEditorFileTree()" class="p-1 rounded text-slate-400 hover:text-white hover:bg-white/5 transition-colors" title="Toggle File Tree">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7"/>
+                    </svg>
+                  </button>
+                  <span id="active-editor-filename" class="text-xs font-mono text-slate-400">src/App.tsx</span>
+                  <div class="ml-auto flex items-center gap-2">
+                    <button id="editor-md-preview-btn" onclick="toggleMarkdownPreview()" class="hidden px-2 py-1 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 rounded border border-emerald-500/20 text-[10px] font-medium transition-all">
+                      Preview MD
+                    </button>
+                    <span class="text-[10px] bg-slate-800 text-slate-400 font-mono px-2 py-0.5 rounded">UTF-8</span>
+                  </div>
+                </div>
+
+                <!-- Editor text/code block -->
+                <div id="editor-code-container" class="flex-1 overflow-auto p-4 custom-scrollbar select-text">
+                  <pre class="font-mono text-xs leading-relaxed"><code id="editor-code-element"><span class="code-keyword">import</span> React, { useState } <span class="code-keyword">from</span> <span class="code-string">'react'</span>;
+
+<span class="code-keyword">export function</span> <span class="code-function">App</span>() {
+  <span class="code-keyword">const</span> [count, setCount] = <span class="code-function">useState</span>(<span class="code-number">0</span>);
+
+  <span class="code-keyword">return</span> (
+    <span class="code-keyword">&lt;</span><span class="code-function">div</span> <span class="code-keyword">className</span>=<span class="code-string">"app p-6"</span><span class="code-keyword">&gt;</span>
+      <span class="code-keyword">&lt;</span>h1 <span class="code-keyword">className</span>=<span class="code-string">"text-xl font-bold"</span><span class="code-keyword">&gt;</span>Hello, Devy!<span class="code-keyword">&lt;/</span>h1<span class="code-keyword">&gt;</span>
+      <span class="code-keyword">&lt;</span>p<span class="code-keyword">&gt;</span>Count: {count}<span class="code-keyword">&lt;/</span>p<span class="code-keyword">&gt;</span>
+      <span class="code-keyword">&lt;</span>button <span class="code-keyword">onClick</span>={() => <span class="code-function">setCount</span>(count + <span class="code-number">1</span>)}<span class="code-keyword">&gt;</span>
+        Increment
+      <span class="code-keyword">&lt;/</span>button<span class="code-keyword">&gt;</span>
+    <span class="code-keyword">&lt;/</span><span class="code-function">div</span><span class="code-keyword">&gt;</span>
+  );
+}</code></pre>
+                </div>
+
+                <!-- MD Rendered Preview -->
+                <div id="editor-md-preview-container" class="hidden flex-1 overflow-auto p-6 bg-[#09090b] prose prose-invert max-w-none custom-scrollbar select-text text-slate-300">
+                  <h1 class="text-2xl font-bold font-space text-white mb-2">🚀 Github-devy</h1>
+                  <p class="text-sm text-slate-400">The Future of AI-Powered Cloud Development Workspaces.</p>
+                  <h2 class="text-lg font-semibold text-white mt-6 mb-2 border-b border-white/5 pb-1">Features</h2>
+                  <ul class="list-disc pl-5 space-y-1 text-sm text-slate-400">
+                    <li>Hybrid WebSocket Terminal</li>
+                    <li>Browser Preview SW Proxy</li>
+                    <li>Codebase Semantic RAG search</li>
+                    <li>Autopilot Debugger & Healing</li>
+                    <li>AST Dependency Visualizer Graph</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Terminal Panel -->
+          <div id="terminal-panel" class="panel absolute inset-0 hidden">
+            <div class="h-full flex flex-col bg-[#0a0a0f]">
+              <div class="h-10 border-b border-white/5 bg-[#0e0e11]/50 flex items-center px-4 gap-2">
+                <div class="flex items-center gap-2">
+                  <div class="w-2 h-2 rounded-full status-online animate-pulse"></div>
+                  <span class="text-xs font-mono text-slate-400" id="terminal-header-title">bash (~/demo-workspace)</span>
+                </div>
+                <div class="ml-auto flex items-center gap-2">
+                  <button class="p-1 rounded text-slate-400 hover:text-white hover:bg-white/5 text-[10px] px-2 py-0.5 border border-white/5 font-mono">
+                    Reset
+                  </button>
+                </div>
+              </div>
+              <div class="flex-1 overflow-y-auto p-4 custom-scrollbar font-mono text-xs leading-normal select-text">
+                <div class="space-y-1.5" id="terminal-output-container">
+                  <div class="flex items-start gap-2">
+                    <span class="terminal-green">➜</span>
+                    <span class="terminal-blue">~/demo-workspace</span>
+                    <span class="terminal-purple">git:(main)</span>
+                    <span class="text-slate-500">$</span>
+                    <span class="text-white">npm run dev</span>
+                  </div>
+                  <div class="text-slate-400 pl-4 space-y-0.5">
+                    <div class="terminal-cyan">> demo@1.0.0 dev</div>
+                    <div class="terminal-cyan">> vite</div>
+                    <div class="pt-1">
+                      <span class="terminal-green">VITE v5.0.0</span>  <span class="text-slate-500">ready in</span> <span class="terminal-yellow">234 ms</span>
+                    </div>
+                    <div class="pt-0.5">
+                      <span class="text-slate-500">➜</span>  <span class="terminal-cyan">Local:</span>   <span class="text-white">http://localhost:5173/</span>
+                    </div>
+                  </div>
+                  <div class="flex items-start gap-2 pt-2">
+                    <span class="terminal-green">➜</span>
+                    <span class="terminal-blue">~/demo-workspace</span>
+                    <span class="terminal-purple">git:(main)</span>
+                    <span class="text-slate-500">$</span>
+                    <span class="typing-cursor text-white">&nbsp;</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Browser Panel -->
+          <div id="browser-panel" class="panel absolute inset-0 hidden">
+            <div class="h-full flex flex-col bg-[#0e0e11]">
+              <div class="h-10 border-b border-white/5 bg-[#0e0e11]/50 flex items-center px-4 gap-2">
+                <div class="flex items-center gap-2 flex-1">
+                  <div class="flex-1 bg-[#1e1e24] border border-white/5 rounded-lg px-3 py-1.5 text-xs text-slate-400 font-mono">
+                    http://localhost:5173/
+                  </div>
+                </div>
+                <div class="flex items-center gap-1.5">
+                  <span class="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] font-mono px-2 py-0.5 rounded">SW Active</span>
+                </div>
+              </div>
+              <div class="flex-1 bg-white flex items-center justify-center relative overflow-hidden select-text text-gray-800">
+                <div id="browser-preview-welcome" class="text-center p-8">
+                  <div class="w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-to-br from-emerald-500 to-blue-500 flex items-center justify-center">
+                    <svg class="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                    </svg>
+                  </div>
+                  <h2 class="text-2xl font-bold text-gray-800 mb-2 font-space">Hello, Github-devy!</h2>
+                  <p class="text-gray-600 text-sm">Your interactive preview is ready.</p>
+                  <div class="mt-6 flex gap-3 justify-center">
+                    <button onclick="incrementBrowserDemo()" class="px-4 py-2 bg-emerald-500 text-white rounded-lg text-sm font-semibold hover:bg-emerald-600 transition-all shadow-md">
+                      Increment
+                    </button>
+                    <span id="browser-demo-counter" class="px-4 py-2 bg-gray-100 text-gray-800 rounded-lg text-sm font-bold font-mono">
+                      Count: 0
+                    </span>
+                  </div>
+                </div>
+
+                <!-- Generated Dashboard view -->
+                <div id="browser-preview-dashboard" class="hidden w-full h-full p-6 bg-slate-900 text-white flex flex-col font-space">
+                  <div class="flex items-center justify-between border-b border-slate-800 pb-4 mb-4">
+                    <h1 class="text-lg font-bold text-emerald-400">📊 Admin Dashboard</h1>
+                    <span class="text-xs bg-slate-800 px-2.5 py-1 rounded text-slate-400 font-mono">Simulated Sandbox</span>
+                  </div>
+                  <div class="grid grid-cols-3 gap-4 mb-6">
+                    <div class="bg-slate-800/80 p-4 rounded-xl border border-slate-700/50">
+                      <p class="text-xs text-slate-400">Total Users</p>
+                      <h3 class="text-xl font-bold text-white mt-1">1,245</h3>
+                    </div>
+                    <div class="bg-slate-800/80 p-4 rounded-xl border border-slate-700/50">
+                      <p class="text-xs text-slate-400">Volume</p>
+                      <h3 class="text-xl font-bold text-white mt-1">$12,450</h3>
+                    </div>
+                    <div class="bg-slate-800/80 p-4 rounded-xl border border-slate-700/50">
+                      <p class="text-xs text-slate-400">Errors</p>
+                      <h3 class="text-xl font-bold text-rose-400 mt-1">0</h3>
+                    </div>
+                  </div>
+                  <div class="flex-1 bg-slate-950/50 border border-slate-800 rounded-xl p-4 flex flex-col justify-center items-center">
+                    <p class="text-slate-400 text-sm">Dashboard Component rendered live inside the Service Worker sandboxed frame.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- AST Graph Panel -->
+          <div id="ast-panel" class="panel absolute inset-0 hidden">
+            <div class="h-full flex overflow-hidden">
+              <div class="flex-1 p-4 flex flex-col min-w-0">
+                <div class="h-10 flex items-center justify-between border-b border-white/5 pb-2 mb-4 shrink-0">
+                  <h2 class="text-sm font-semibold text-white font-space">AST Code Dependency Graph</h2>
+                  <span class="text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded font-mono">TypeScript Compiler API</span>
+                </div>
+                <div class="flex-1 border border-white/5 rounded-xl bg-[#09090c] relative overflow-hidden flex items-center justify-center">
+                  <!-- Simulated Interactive SVG -->
+                  <svg id="ast-svg" class="w-full h-full" viewBox="0 0 800 450">
+                    <!-- Links -->
+                    <line x1="400" y1="225" x2="250" y2="125" stroke="#3b82f6" stroke-width="1.5" stroke-dasharray="4" />
+                    <line x1="400" y1="225" x2="550" y2="125" stroke="#3b82f6" stroke-width="1.5" />
+                    <line x1="250" y1="125" x2="150" y2="280" stroke="#10b981" stroke-width="1.5" />
+                    <line x1="550" y1="125" x2="650" y2="280" stroke="#10b981" stroke-width="1.5" />
+                    <line x1="400" y1="225" x2="400" y2="350" stroke="#a855f7" stroke-width="1.5" />
+                    
+                    <!-- Nodes -->
+                    <g class="cursor-pointer group" onclick="selectAstNode('src/main.tsx', ['src/App.tsx'], ['ReactDOM'])">
+                      <circle cx="250" cy="125" r="16" fill="#1e1e24" stroke="#3b82f6" stroke-width="2" class="transition-all hover:r-20" />
+                      <text x="250" y="95" fill="#e2e8f0" font-size="11" text-anchor="middle" font-family="monospace">main.tsx</text>
+                    </g>
+                    <g class="cursor-pointer group" onclick="selectAstNode('src/App.tsx', ['src/components/Button.tsx', 'src/contexts/AgentContext.tsx'], ['App', 'Props'])">
+                      <circle cx="400" cy="225" r="20" fill="#15151a" stroke="#10b981" stroke-width="2" />
+                      <text x="400" y="195" fill="#e2e8f0" font-size="11" text-anchor="middle" font-family="monospace">App.tsx</text>
+                    </g>
+                    <g class="cursor-pointer group" onclick="selectAstNode('src/components/Button.tsx', [], ['Button'])">
+                      <circle cx="150" cy="280" r="14" fill="#1e1e24" stroke="#eab308" stroke-width="2" />
+                      <text x="150" y="315" fill="#e2e8f0" font-size="11" text-anchor="middle" font-family="monospace">Button.tsx</text>
+                    </g>
+                    <g class="cursor-pointer group" onclick="selectAstNode('src/contexts/AgentContext.tsx', [], ['AgentProvider', 'useAgent'])">
+                      <circle cx="550" cy="125" r="16" fill="#1e1e24" stroke="#a855f7" stroke-width="2" />
+                      <text x="550" y="95" fill="#e2e8f0" font-size="11" text-anchor="middle" font-family="monospace">AgentContext.tsx</text>
+                    </g>
+                    <g class="cursor-pointer group" onclick="selectAstNode('package.json', [], [])">
+                      <circle cx="400" cy="350" r="16" fill="#1e1e24" stroke="#f97316" stroke-width="2" />
+                      <text x="400" y="385" fill="#e2e8f0" font-size="11" text-anchor="middle" font-family="monospace">package.json</text>
+                    </g>
+                  </svg>
+                  <div class="absolute bottom-4 left-4 glass-dark p-3 rounded-lg text-[10px] text-slate-400 space-y-1">
+                    <p>💡 Click node to inspect details in sidebar</p>
+                    <p>💡 Double-click node to load code inside Editor</p>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- AST sidebar inspector -->
+              <div class="w-64 border-l border-white/5 bg-[#0a0a0f] p-4 flex flex-col gap-4 shrink-0">
+                <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider font-space">AST Inspector</h3>
+                <div id="ast-inspector-empty" class="text-center py-12 text-xs text-slate-600">
+                  Select a node to inspect dependencies
+                </div>
+                <div id="ast-inspector-content" class="hidden space-y-4 text-xs select-text">
+                  <div>
+                    <label class="text-slate-500 font-semibold font-space">File Path:</label>
+                    <div id="ast-inspect-path" class="text-white font-mono mt-1 text-emerald-400">src/App.tsx</div>
+                  </div>
+                  <div>
+                    <label class="text-slate-500 font-semibold font-space">Import Tree:</label>
+                    <ul id="ast-inspect-imports" class="list-disc pl-4 text-slate-300 space-y-1 mt-1 font-mono">
+                    </ul>
+                  </div>
+                  <div>
+                    <label class="text-slate-500 font-semibold font-space">Exported Symbols:</label>
+                    <div id="ast-inspect-symbols" class="flex flex-wrap gap-1.5 mt-1.5 font-mono">
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- API Sandbox Panel -->
+          <div id="sandbox-panel" class="panel absolute inset-0 hidden">
+            <div class="h-full flex overflow-hidden">
+              <div class="flex-1 p-4 flex flex-col min-w-0">
+                <div class="h-10 flex items-center justify-between border-b border-white/5 pb-2 mb-4 shrink-0">
+                  <h2 class="text-sm font-semibold text-white font-space">API Mocking Sandbox Dashboard</h2>
+                  <span class="text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded font-mono">Logs stream</span>
+                </div>
+                <!-- API Logs table -->
+                <div class="flex-1 border border-white/5 rounded-xl bg-[#09090c] overflow-y-auto p-4 custom-scrollbar select-text">
+                  <table class="w-full text-left text-xs font-mono">
+                    <thead>
+                      <tr class="text-slate-500 border-b border-white/5 pb-2">
+                        <th class="pb-2">Timestamp</th>
+                        <th class="pb-2">Method</th>
+                        <th class="pb-2">Endpoint</th>
+                        <th class="pb-2 text-right">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody id="sandbox-mock-logs-body" class="divide-y divide-white/5">
+                      <tr class="text-slate-300">
+                        <td class="py-2 text-slate-500">12:04:12</td>
+                        <td class="py-2 text-emerald-400 font-bold">POST</td>
+                        <td class="py-2">/stripe/v1/payment_intents</td>
+                        <td class="py-2 text-right text-emerald-500">200 OK</td>
+                      </tr>
+                      <tr class="text-slate-300">
+                        <td class="py-2 text-slate-500">12:04:15</td>
+                        <td class="py-2 text-blue-400 font-bold">POST</td>
+                        <td class="py-2">/auth0/oauth/token</td>
+                        <td class="py-2 text-right text-emerald-500">200 OK</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              
+              <div class="w-72 border-l border-white/5 bg-[#0a0a0f] p-4 flex flex-col gap-4 shrink-0">
+                <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider font-space">Webhook Simulator</h3>
+                <div class="space-y-4 text-xs">
+                  <div class="space-y-2">
+                    <label class="text-slate-400">Target Webhook URL</label>
+                    <input id="sandbox-webhook-url" type="text" class="w-full bg-[#1e1e24] border border-white/5 text-white rounded-lg px-3 py-2 outline-none font-mono" value="http://localhost:3000/webhooks">
+                  </div>
+                  <div class="space-y-2">
+                    <label class="text-slate-400">Event Signature</label>
+                    <select id="sandbox-webhook-event" class="w-full bg-[#1e1e24] border border-white/5 text-white rounded-lg px-3 py-2 outline-none cursor-pointer">
+                      <option value="payment_intent.succeeded">Stripe: payment_intent.succeeded</option>
+                      <option value="payment_intent.failed">Stripe: payment_intent.payment_failed</option>
+                      <option value="message.delivered">Twilio: sms.message.delivered</option>
+                      <option value="user.created">Auth0: user.created_session</option>
+                    </select>
+                  </div>
+                  <button onclick="dispatchMockWebhook()" class="w-full py-2 bg-emerald-500 hover:bg-emerald-400 text-black font-semibold rounded-lg transition-colors flex items-center justify-center gap-2">
+                    <span>Dispatch Event</span>
+                  </button>
+                  <div id="sandbox-webhook-dispatch-result" class="hidden p-3 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-lg text-[10px] leading-relaxed">
+                    Event dispatched successfully to port 3000. Status 200 OK.
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Autopilot Debugger Panel -->
+          <div id="debugger-panel" class="panel absolute inset-0 hidden">
+            <div class="h-full flex flex-col p-4 bg-[#0a0a0f] select-text">
+              <div class="h-10 flex items-center justify-between border-b border-white/5 pb-2 mb-4 shrink-0">
+                <div class="flex items-center gap-2">
+                  <svg class="w-4 h-4 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                  </svg>
+                  <h2 class="text-sm font-semibold text-white font-space">Autopilot Self-Healing Debugger</h2>
+                </div>
+                <div class="flex items-center gap-4">
+                  <label class="flex items-center gap-2 cursor-pointer select-none">
+                    <input type="checkbox" id="autopilot-active-checkbox" checked class="accent-emerald-500 w-4 h-4 rounded">
+                    <span class="text-xs text-slate-400 font-space">Enable Autopilot</span>
+                  </label>
+                  <button onclick="triggerSelfHealingSimulation()" class="px-3 py-1.5 bg-rose-500 hover:bg-rose-600 text-white font-semibold rounded-lg text-xs transition-colors">
+                    Simulate Crash
+                  </button>
+                </div>
+              </div>
+
+              <!-- Terminal console + healer steps -->
+              <div class="flex-1 flex gap-4 overflow-hidden">
+                <div class="flex-1 bg-black border border-white/5 rounded-xl p-4 font-mono text-xs overflow-y-auto custom-scrollbar space-y-1.5" id="debugger-terminal-console">
+                  <div class="text-slate-500">> node test-suite.js</div>
+                  <div class="text-slate-400">Running compilation tests...</div>
+                  <div class="text-rose-500 font-bold mt-2">Error: ReferenceError: count is not defined in src/App.tsx:L8</div>
+                  <div class="text-rose-500 pl-4">at App (src/App.tsx:8:15)</div>
+                  <div class="text-rose-500 pl-4">at Object.render (react-dom:123:12)</div>
+                  <div class="text-yellow-400 mt-3 font-semibold">[Autopilot] Crash detected. Initializing self-healing runner...</div>
+                </div>
+
+                <div class="w-72 bg-[#121217] border border-white/5 rounded-xl p-4 flex flex-col shrink-0 overflow-y-auto custom-scrollbar">
+                  <h3 class="text-xs font-semibold text-white uppercase tracking-wider mb-3 font-space">Autopilot Agent Status</h3>
+                  <div id="autopilot-healer-steps" class="space-y-4 text-xs">
+                    <div class="flex items-start gap-2.5">
+                      <div class="w-4 h-4 rounded-full bg-emerald-500 flex items-center justify-center shrink-0 text-[10px] text-black font-bold">✓</div>
+                      <div>
+                        <p class="font-semibold text-white">1. Diagnostic Sweep</p>
+                        <p class="text-slate-500 text-[10px]">Read traceback stack and logs.</p>
+                      </div>
+                    </div>
+                    <div class="flex items-start gap-2.5" id="autopilot-step-2">
+                      <div class="w-4 h-4 rounded-full border border-slate-600 flex items-center justify-center shrink-0 text-[10px] text-slate-400 font-bold">2</div>
+                      <div>
+                        <p class="font-semibold text-slate-400">2. Code Correction</p>
+                        <p class="text-slate-600 text-[10px]">Apply code fixes to App.tsx.</p>
+                      </div>
+                    </div>
+                    <div class="flex items-start gap-2.5" id="autopilot-step-3">
+                      <div class="w-4 h-4 rounded-full border border-slate-600 flex items-center justify-center shrink-0 text-[10px] text-slate-400 font-bold">3</div>
+                      <div>
+                        <p class="font-semibold text-slate-400">3. Process Rerun</p>
+                        <p class="text-slate-600 text-[10px]">Verify compilation output.</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Trajectory Panel -->
+          <div id="trajectory-panel" class="panel absolute inset-0 hidden">
+            <div class="h-full flex overflow-hidden">
+              <div class="flex-1 p-4 flex flex-col min-w-0">
+                <div class="h-10 flex items-center justify-between border-b border-white/5 pb-2 mb-4 shrink-0">
+                  <h2 class="text-sm font-semibold text-white font-space">Agent Trajectory Trace Timeline</h2>
+                  <button onclick="startTrajectorySimulation()" class="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-black font-semibold rounded-lg text-xs transition-colors flex items-center gap-1">
+                    <span>Simulate ReAct Run</span>
+                  </button>
+                </div>
+                <div class="flex-1 overflow-y-auto p-2 custom-scrollbar select-text space-y-4" id="trajectory-timeline-container">
+                  <!-- Empty state -->
+                  <div id="trajectory-empty-state" class="text-center py-20 text-xs text-slate-500">
+                    Click "Simulate ReAct Run" to watch Devy AI search codes, execute runs, edit components, and verify results step-by-step.
+                  </div>
+                </div>
+              </div>
+              
+              <!-- Session details sidebar -->
+              <div class="w-64 border-l border-white/5 bg-[#0a0a0f] p-4 flex flex-col gap-4 shrink-0 text-xs select-text">
+                <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider font-space">Run Details</h3>
+                <div class="space-y-4">
+                  <div>
+                    <label class="text-slate-500 font-semibold font-space">Active Agent:</label>
+                    <div class="text-white font-mono mt-1 font-bold text-emerald-400">Devy ReAct Agent</div>
+                  </div>
+                  <div>
+                    <label class="text-slate-500 font-semibold font-space">Step Iterations:</label>
+                    <div id="trajectory-stats-steps" class="text-white font-mono mt-1">0 / 30</div>
+                  </div>
+                  <div>
+                    <label class="text-slate-500 font-semibold font-space font-space">Token Consumption:</label>
+                    <div id="trajectory-stats-tokens" class="text-white font-mono mt-1">0 tokens</div>
+                  </div>
+                  <div>
+                    <label class="text-slate-500 font-semibold font-space font-space font-space">Accumulated Cost:</label>
+                    <div id="trajectory-stats-cost" class="text-emerald-400 font-mono mt-1 font-bold">$0.00 USD</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Planner Panel -->
+          <div id="planner-panel" class="panel absolute inset-0 hidden">
+            <div class="h-full flex overflow-hidden p-4 select-text">
+              <div class="flex-1 flex flex-col pr-4 border-r border-white/5">
+                <h3 class="text-xs font-semibold text-white uppercase tracking-wider mb-3 font-space">plan.md (Design Document)</h3>
+                <div class="flex-1 bg-black/40 border border-white/5 rounded-xl p-4 font-mono text-xs overflow-y-auto custom-scrollbar text-slate-300">
+                  <h1 class="text-white font-bold text-sm mb-2 border-b border-white/5 pb-1">Simulated Plan: Create Admin Dashboard</h1>
+                  <p class="text-slate-400 mt-2">Goal: Implement a metrics dashboard UI with simulated SW proxies.</p>
+                  <h3 class="text-white font-semibold mt-4">Proposed Steps:</h3>
+                  <ul class="list-disc pl-4 space-y-1 mt-1 text-slate-400 font-mono">
+                    <li>Create src/components/Dashboard.tsx with statistics grids</li>
+                    <li>Import and render Dashboard inside src/App.tsx viewport</li>
+                    <li>Verify visual renders in Sandbox Browser Preview</li>
+                  </ul>
+                </div>
+              </div>
+              <div class="w-80 pl-4 flex flex-col shrink-0 text-xs">
+                <h3 class="text-xs font-semibold text-white uppercase tracking-wider mb-3 font-space">tasks.md (AI Checklist Tracker)</h3>
+                <div class="flex-1 bg-black/40 border border-white/5 rounded-xl p-4 font-mono text-xs overflow-y-auto custom-scrollbar space-y-2">
+                  <div class="flex items-start gap-2.5">
+                    <input type="checkbox" checked disabled class="mt-0.5">
+                    <span class="text-slate-500 line-through">Initialize admin project skeleton</span>
+                  </div>
+                  <div class="flex items-start gap-2.5">
+                    <input type="checkbox" id="simulated-task-2" disabled class="mt-0.5">
+                    <span id="simulated-task-2-text" class="text-slate-300">Create src/components/Dashboard.tsx component</span>
+                  </div>
+                  <div class="flex items-start gap-2.5">
+                    <input type="checkbox" id="simulated-task-3" disabled class="mt-0.5">
+                    <span id="simulated-task-3-text" class="text-slate-300">Mount Dashboard inside main App.tsx file</span>
+                  </div>
+                  <div class="flex items-start gap-2.5">
+                    <input type="checkbox" id="simulated-task-4" disabled class="mt-0.5">
+                    <span id="simulated-task-4-text" class="text-slate-300">Run compilation checks and verify browser rendering</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Settings Panel -->
+          <div id="settings-panel" class="panel absolute inset-0 hidden">
+            <div class="h-full flex items-center justify-center p-6 bg-[#0a0a0f] overflow-y-auto custom-scrollbar">
+              <div class="w-full max-w-sm rounded-2xl bg-[#121217] shadow-2xl p-6 border border-white/5">
+                <div class="flex items-center space-x-3 mb-6 border-b border-white/5 pb-4">
+                  <svg class="w-5 h-5 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                  </svg>
+                  <h2 class="text-lg font-bold text-white font-space">Workstation Setup</h2>
+                </div>
+
+                <div class="space-y-5 text-xs">
+                  <!-- API Toggle -->
+                  <div class="space-y-2">
+                    <label class="text-slate-400 font-semibold">API Model Provider</label>
+                    <div class="bg-black/40 p-1 rounded-xl flex border border-white/5">
+                      <button onclick="switchSettingsProvider('gemini')" id="provider-btn-gemini" class="flex-1 py-1.5 rounded-lg text-[10px] font-semibold bg-[#2a2a32] text-emerald-400 shadow transition-all">Gemini</button>
+                      <button onclick="switchSettingsProvider('ollama')" id="provider-btn-ollama" class="flex-1 py-1.5 rounded-lg text-[10px] font-semibold text-slate-500 hover:text-white transition-all">Ollama</button>
+                      <button onclick="switchSettingsProvider('lmstudio')" id="provider-btn-lmstudio" class="flex-1 py-1.5 rounded-lg text-[10px] font-semibold text-slate-500 hover:text-white transition-all">LM Studio</button>
+                    </div>
+                  </div>
+
+                  <!-- Config fields -->
+                  <div class="space-y-3" id="settings-fields-container">
+                    <div class="space-y-1">
+                      <label class="text-slate-400 font-space">Gemini Model</label>
+                      <select class="w-full bg-[#1e1e24] text-white border border-white/5 rounded-lg px-3 py-2 outline-none cursor-pointer font-mono">
+                        <option>gemini-2.5-flash</option>
+                        <option>gemini-2.5-pro</option>
+                        <option>gemini-2.0-flash-thinking-exp</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <!-- Steps Cap Slider -->
+                  <div class="space-y-2">
+                    <div class="flex justify-between text-slate-400">
+                      <span class="font-semibold font-space">Max Agent Steps</span>
+                      <span id="settings-steps-value" class="font-mono text-emerald-400 font-bold">30</span>
+                    </div>
+                    <input type="range" min="10" max="100" value="30" class="w-full accent-emerald-500 bg-[#1e1e24] cursor-pointer" oninput="updateSettingsSteps(this.value)">
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Placeholder panels for unused navbar links to avoid errors -->
+          <div id="git-panel" class="panel absolute inset-0 hidden">
+            <div class="h-full flex flex-col p-4 bg-[#0a0a0f] select-text">
+              <h3 class="text-xs font-semibold text-white uppercase tracking-wider mb-3 font-space border-b border-white/5 pb-2">Version Control (Git)</h3>
+              <div class="flex-1 flex gap-4 overflow-hidden text-xs">
+                <div class="flex-1 bg-black/35 border border-white/5 rounded-xl p-4 font-mono space-y-2">
+                  <p class="text-slate-400 font-space">Changes Staged for Commit:</p>
+                  <div class="flex items-center gap-2 text-emerald-400">
+                    <span>M</span>
+                    <span>src/App.tsx</span>
+                  </div>
+                </div>
+                <div class="w-64 bg-[#121217] border border-white/5 rounded-xl p-4 space-y-4 font-space">
+                  <div class="space-y-2">
+                    <label class="text-slate-400 font-semibold">Commit Message</label>
+                    <input type="text" class="w-full bg-[#1e1e24] text-white border border-white/5 rounded px-2.5 py-1.5 font-mono" value="Update metrics layout components">
+                  </div>
+                  <button onclick="addMessage('Changes committed and pushed successfully to GitHub branch main.', false)" class="w-full py-2 bg-emerald-500 hover:bg-emerald-400 text-black font-semibold rounded-lg transition-colors">
+                    Commit & Push
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div id="packages-panel" class="panel absolute inset-0 hidden">
+            <div class="h-full flex flex-col p-4 bg-[#0a0a0f] select-text text-xs">
+              <h3 class="text-xs font-semibold text-white uppercase tracking-wider mb-3 font-space border-b border-white/5 pb-2">Package Manager</h3>
+              <div class="flex gap-2 mb-4">
+                <input type="text" placeholder="Search npm registry..." class="flex-1 bg-[#1e1e24] text-white border border-white/5 rounded-lg px-3 py-2 outline-none font-mono">
+                <button onclick="addMessage('Package operation npm install lucide-react simulated successfully.', false)" class="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-black font-semibold rounded-lg transition-colors font-space">Install</button>
+              </div>
+              <div class="flex-1 border border-white/5 bg-black/40 rounded-xl p-4 font-mono space-y-2 overflow-y-auto custom-scrollbar">
+                <div class="flex justify-between border-b border-white/5 pb-1.5 text-slate-500 font-space">
+                  <span>Dependency</span>
+                  <span>Version</span>
+                </div>
+                <div class="flex justify-between text-slate-300">
+                  <span>react</span>
+                  <span class="text-emerald-400 font-bold">^19.0.1</span>
+                </div>
+                <div class="flex justify-between text-slate-300">
+                  <span>react-dom</span>
+                  <span class="text-emerald-400 font-bold">^19.0.1</span>
+                </div>
+                <div class="flex justify-between text-slate-300">
+                  <span>typescript</span>
+                  <span class="text-slate-500 font-bold">~5.8.2</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div id="database-panel" class="panel absolute inset-0 hidden">
+            <div class="h-full flex overflow-hidden p-4 bg-[#0a0a0f] select-text text-xs font-mono">
+              <div class="w-48 border-r border-white/5 pr-4 flex flex-col gap-2 shrink-0">
+                <span class="text-slate-500 font-space font-semibold uppercase tracking-wider">Databases</span>
+                <button class="w-full text-left px-2 py-1.5 rounded bg-white/5 text-emerald-400 font-bold border border-emerald-500/20">users.db</button>
+              </div>
+              <div class="flex-1 pl-4 flex flex-col min-w-0">
+                <div class="flex gap-2 mb-3">
+                  <input type="text" class="flex-1 bg-[#1e1e24] text-white border border-white/5 rounded-lg px-3 py-2 outline-none" value="SELECT * FROM users LIMIT 3;">
+                  <button class="px-4 py-2 bg-emerald-500 text-black font-semibold rounded-lg font-space">Run Query</button>
+                </div>
+                <div class="flex-1 border border-white/5 bg-black/40 rounded-xl p-4 overflow-y-auto custom-scrollbar">
+                  <table class="w-full text-left">
+                    <thead>
+                      <tr class="text-slate-500 border-b border-white/5 pb-2 font-space">
+                        <th>id</th>
+                        <th>name</th>
+                        <th>role</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-white/5 text-slate-300">
+                      <tr>
+                        <td class="py-1.5">1</td>
+                        <td>Alice Admin</td>
+                        <td class="text-emerald-400">admin</td>
+                      </tr>
+                      <tr>
+                        <td class="py-1.5">2</td>
+                        <td>Bob Coder</td>
+                        <td class="text-blue-400">developer</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- Help Modal -->
+  <div id="help-modal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden items-center justify-center p-4">
+    <div class="bg-[#121217] border border-white/10 rounded-2xl max-w-2xl w-full max-h-[80vh] overflow-hidden flex flex-col select-text">
+      <div class="p-6 border-b border-white/5 flex items-center justify-between">
+        <h2 class="text-xl font-bold text-white font-space">Quick Help</h2>
+        <button id="close-help" class="p-2 text-slate-400 hover:text-white transition-colors rounded-lg hover:bg-white/5">
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+      <div class="flex-1 overflow-y-auto p-6 custom-scrollbar text-sm text-slate-400 space-y-6">
+        <div>
+          <h3 class="text-base font-semibold text-white mb-2 font-space">Workspace Simulation Triggers</h3>
+          <p class="leading-relaxed">Use the main Chat box to trigger complex automated agent processes offline:</p>
+          <ul class="list-disc pl-5 space-y-1.5 mt-2">
+            <li>Type <span class="text-emerald-400 font-mono font-bold">"create dashboard page"</span>: Spawns the ReAct trajectory tracing loop, dynamically adds a Dashboard component to the file explorer, replaces editor code, checks off task lists, and mounts it inside the Browser Preview.</li>
+            <li>Type <span class="text-emerald-400 font-mono font-bold">"diagnose script error"</span>: Launches the terminal autopilot compiler sweep, steps through diagnostic sweeper items, executes file correction patches, and updates console outputs.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="text-base font-semibold text-white mb-2 font-space">AST Graph Inspector</h3>
+          <p class="leading-relaxed font-space">Go to the **AST Graph** tab and tap on code nodes to inspect their imports and symbol tree, or double-click to load them in the code editor workspace.</p>
+        </div>
+        <div>
+          <h3 class="text-base font-semibold text-white mb-2 font-space">API Mock Sandbox</h3>
+          <p class="leading-relaxed">Explore the **Sandbox Mocks** tab. Toggle Stripe and Auth0 triggers in the Webhook Simulator and tap "Dispatch Event" to watch the mock logs populate dynamically.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Loading Animation
+    const loadingScreen = document.getElementById('loading-screen');
+    const loadingProgress = document.getElementById('loading-progress');
+    const app = document.getElementById('app');
+    
+    let progress = 0;
+    const loadingInterval = setInterval(() => {
+      progress += Math.random() * 18;
+      if (progress >= 100) {
+        progress = 100;
+        clearInterval(loadingInterval);
+        
+        setTimeout(() => {
+          loadingScreen.style.opacity = '0';
+          loadingScreen.style.transition = 'opacity 0.5s';
+          
+          setTimeout(() => {
+            loadingScreen.style.display = 'none';
+            app.style.opacity = '1';
+          }, 500);
+        }, 300);
+      }
+      loadingProgress.style.width = progress + '%';
+    }, 80);
+
+    // Tab & Nav Actions
+    const tabBtns = document.querySelectorAll('.tab-btn');
+    const navBtns = document.querySelectorAll('.nav-btn');
+    const panels = document.querySelectorAll('.panel');
+
+    function switchTab(tabName) {
+      tabBtns.forEach(btn => {
+        if (btn.dataset.tab === tabName) {
+          btn.classList.add('bg-emerald-500/10', 'border', 'border-emerald-500/20', 'text-white');
+          btn.classList.remove('text-slate-400', 'hover:text-white', 'hover:bg-white/5');
+        } else {
+          btn.classList.remove('bg-emerald-500/10', 'border', 'border-emerald-500/20', 'text-white');
+          btn.classList.add('text-slate-400', 'hover:text-white', 'hover:bg-white/5');
+        }
+      });
+
+      navBtns.forEach(btn => {
+        if (btn.dataset.tab === tabName) {
+          btn.classList.add('active-tab');
+        } else {
+          btn.classList.remove('active-tab');
+        }
+      });
+
+      panels.forEach(panel => {
+        if (panel.id === tabName + '-panel') {
+          panel.classList.remove('hidden');
+          panel.classList.add('animate-fade-in');
+        } else {
+          panel.classList.add('hidden');
+          panel.classList.remove('animate-fade-in');
+        }
+      });
+    }
+
+    tabBtns.forEach(btn => {
+      btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+    });
+
+    navBtns.forEach(btn => {
+      btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+    });
+
+    // Sidebar Toggle
+    const sidebarToggle = document.getElementById('sidebar-toggle');
+    const sidebar = document.getElementById('sidebar');
+    
+    sidebarToggle.addEventListener('click', () => {
+      sidebar.classList.toggle('w-64');
+      sidebar.classList.toggle('w-0');
+      sidebar.classList.toggle('overflow-hidden');
+    });
+
+    // Editor file tree toggle
+    const editorFileTree = document.getElementById('editor-file-tree');
+    function toggleEditorFileTree() {
+      editorFileTree.classList.toggle('w-64');
+      editorFileTree.classList.toggle('w-0');
+      editorFileTree.classList.toggle('opacity-0');
+    }
+
+    // Help Modal
+    const helpBtn = document.getElementById('help-btn');
+    const helpModal = document.getElementById('help-modal');
+    const closeHelp = document.getElementById('close-help');
+
+    helpBtn.addEventListener('click', () => {
+      helpModal.classList.remove('hidden');
+      helpModal.classList.add('flex');
+    });
+
+    closeHelp.addEventListener('click', () => {
+      helpModal.classList.add('hidden');
+      helpModal.classList.remove('flex');
+    });
+
+    helpModal.addEventListener('click', (e) => {
+      if (e.target === helpModal) {
+        helpModal.classList.add('hidden');
+        helpModal.classList.remove('flex');
+      }
+    });
+
+    // Simulated settings steps cap
+    function updateSettingsSteps(val) {
+      document.getElementById('settings-steps-value').innerText = val;
+    }
+
+    // Settings Provider Toggles
+    function switchSettingsProvider(provider) {
+      const providers = ['gemini', 'ollama', 'lmstudio'];
+      providers.forEach(p => {
+        const btn = document.getElementById(`provider-btn-${p}`);
+        if (p === provider) {
+          btn.className = "flex-1 py-1.5 rounded-lg text-[10px] font-semibold bg-[#2a2a32] text-emerald-400 shadow transition-all font-space";
+        } else {
+          btn.className = "flex-1 py-1.5 rounded-lg text-[10px] font-semibold text-slate-500 hover:text-white transition-all font-space";
+        }
+      });
+
+      // Update active LLM provider label
+      let providerName = "Gemini 2.5 Flash";
+      let configFields = "";
+      if (provider === "ollama") {
+        providerName = "Ollama Local (codegemma)";
+        configFields = `
+          <div class="space-y-1">
+            <label class="text-slate-400 font-space">Ollama API URL</label>
+            <input type="text" value="http://localhost:11434" class="w-full bg-[#1e1e24] text-white border border-white/5 rounded px-2.5 py-1.5 font-mono">
+          </div>
+          <div class="space-y-1">
+            <label class="text-slate-400 font-space">Select Model</label>
+            <select class="w-full bg-[#1e1e24] text-white border border-white/5 rounded px-2 py-1.5 font-mono cursor-pointer"><option>codegemma</option><option>qwen2.5-coder</option></select>
+          </div>
+        `;
+      } else if (provider === "lmstudio") {
+        providerName = "LM Studio Local completions";
+        configFields = `
+          <div class="space-y-1">
+            <label class="text-slate-400 font-space">LM Studio Server URL</label>
+            <input type="text" value="http://localhost:1234" class="w-full bg-[#1e1e24] text-white border border-white/5 rounded px-2.5 py-1.5 font-mono">
+          </div>
+          <div class="space-y-1">
+            <label class="text-slate-400 font-space">Select Model</label>
+            <select class="w-full bg-[#1e1e24] text-white border border-white/5 rounded px-2 py-1.5 font-mono cursor-pointer"><option>local-model</option></select>
+          </div>
+        `;
+      } else {
+        configFields = `
+          <div class="space-y-1">
+            <label class="text-slate-400 font-space">Gemini Model</label>
+            <select class="w-full bg-[#1e1e24] text-white border border-white/5 rounded px-2 py-1.5 font-mono cursor-pointer"><option>gemini-2.5-flash</option><option>gemini-2.5-pro</option></select>
+          </div>
+        `;
+      }
+
+      document.getElementById('settings-fields-container').innerHTML = configFields;
+      document.getElementById('active-llm-provider-text').innerText = `LLM Provider: ${providerName}`;
+      addMessage(`Switched active AI completions model provider to ${provider.toUpperCase()}.`, false);
+    }
+
+    // Host environment selector
+    const envSelect = document.getElementById('simulated-env-select');
+    envSelect.addEventListener('change', () => {
+      const env = envSelect.value;
+      const statusText = document.getElementById('system-status-text');
+      const terminalHeader = document.getElementById('terminal-header-title');
+      
+      if (env === 'win32') {
+        statusText.innerText = "Sys OS: Windows";
+        terminalHeader.innerText = "cmd.exe (C:\\projects\\demo-workspace)";
+        addMessage("Detected host environment change to Windows. Spawning cmd.exe shell execution proxy.", false);
+      } else if (env === 'termux') {
+        statusText.innerText = "Sys OS: Android/Termux";
+        terminalHeader.innerText = "bash (/data/data/com.termux/files/home)";
+        addMessage("Detected host environment change to Termux. Routing shell command calls to Termux sandbox shell.", false);
+      } else {
+        statusText.innerText = "Sys OS: Linux";
+        terminalHeader.innerText = "bash (~/demo-workspace)";
+        addMessage("Detected host environment change to Linux. Loading default bash shell.", false);
+      }
+    });
+
+    // Browser increment demo
+    let browserCount = 0;
+    function incrementBrowserDemo() {
+      browserCount++;
+      document.getElementById('browser-demo-counter').innerText = `Count: ${browserCount}`;
+      
+      // Update the counter in the code editor if App.tsx is active
+      if (activeEditorFile === 'src/App.tsx') {
+        selectEditorFile('src/App.tsx'); // reload
+      }
+    }
+
+    // AST inspector selection
+    function selectAstNode(filePath, imports, symbols) {
+      document.getElementById('ast-inspector-empty').classList.add('hidden');
+      const content = document.getElementById('ast-inspector-content');
+      content.classList.remove('hidden');
+      
+      document.getElementById('ast-inspect-path').innerText = filePath;
+      
+      const importsList = document.getElementById('ast-inspect-imports');
+      importsList.innerHTML = '';
+      if (imports.length === 0) {
+        importsList.innerHTML = '<span class="text-slate-600 font-space italic">None</span>';
+      } else {
+        imports.forEach(imp => {
+          const li = document.createElement('li');
+          li.innerText = imp;
+          importsList.appendChild(li);
+        });
+      }
+
+      const symbolsList = document.getElementById('ast-inspect-symbols');
+      symbolsList.innerHTML = '';
+      if (symbols.length === 0) {
+        symbolsList.innerHTML = '<span class="text-slate-600 font-space italic">None</span>';
+      } else {
+        symbols.forEach(sym => {
+          const span = document.createElement('span');
+          span.className = "px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded text-[10px]";
+          span.innerText = sym;
+          symbolsList.appendChild(span);
+        });
+      }
+    }
+
+    // Double-click SVG node to open in Editor
+    document.getElementById('ast-svg').addEventListener('dblclick', (e) => {
+      const target = e.target.closest('g');
+      if (target) {
+        const text = target.querySelector('text').textContent;
+        const filePath = text.includes('/') ? text : `src/${text}`;
+        selectEditorFile(filePath);
+        switchTab('editor');
+      }
+    });
+
+    // Sandbox webhook dispatch
+    function dispatchMockWebhook() {
+      const url = document.getElementById('sandbox-webhook-url').value;
+      const event = document.getElementById('sandbox-webhook-event').value;
+      const logBody = document.getElementById('sandbox-mock-logs-body');
+      
+      const now = new Date();
+      const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
+      
+      const tr = document.createElement('tr');
+      tr.className = "text-slate-300 animate-fade-in";
+      tr.innerHTML = `
+        <td class="py-2 text-slate-500">${timeStr}</td>
+        <td class="py-2 text-purple-400 font-bold">EVENT</td>
+        <td class="py-2">${event} ➔ ${url.substring(0,25)}...</td>
+        <td class="py-2 text-right text-emerald-500">200 OK</td>
+      `;
+      logBody.insertBefore(tr, logBody.firstChild);
+
+      const resultBox = document.getElementById('sandbox-webhook-dispatch-result');
+      resultBox.classList.remove('hidden');
+      resultBox.innerText = `Event "${event}" successfully dispatched to ${url}. Status code: 200 OK.`;
+    }
+
+    // Simulated database query or table click
+    let originalAppCode = `import React, { useState } from 'react';
+
+export function App() {
+  const [count, setCount] = useState(0);
+
+  return (
+    <div className="app p-6">
+      <h1 className="text-xl font-bold">Hello, Devy!</h1>
+      <p>Count: {count}</p>
+      <button onClick={() => setCount(count + 1)}>
+        Increment
+      </button>
+    </div>
+  );
+}`;
+
+    let dashboardCode = `import React from 'react';
+
+export function Dashboard() {
+  return (
+    <div className="bg-slate-900 text-white p-6 rounded-xl flex flex-col font-space h-full">
+      <div class="flex justify-between border-b border-slate-800 pb-2 mb-4">
+        <h1 class="text-base font-bold text-emerald-400">📈 Sales Dashboard</h1>
+        <span class="text-[10px] bg-slate-800 px-2 rounded">Active Live</span>
+      </div>
+      <div class="grid grid-cols-2 gap-4">
+        <div class="bg-slate-800 p-3 rounded">
+          <p class="text-[10px] text-slate-400">Total Users</p>
+          <p class="text-sm font-bold">1,245</p>
+        </div>
+        <div class="bg-slate-800 p-3 rounded">
+          <p class="text-[10px] text-slate-400">Revenue</p>
+          <p class="text-sm font-bold">$12,450</p>
+        </div>
+      </div>
+    </div>
+  );
+}`;
+
+    let packageCode = `{
+  "name": "demo-app",
+  "version": "1.0.0",
+  "dependencies": {
+    "react": "^19.0.1",
+    "react-dom": "^19.0.1",
+    "lucide-react": "^0.546.0"
+  }
+}`;
+
+    let readmeCode = `# 🚀 Github-devy Workspace
+
+This workspace is set up to build, debug, and test code.
+
+## Available Shell Commands:
+- \`npm run dev\` - Launches development servers.
+- \`npm test\` - Triggers compilation test checkers.
+`;
+
+    let activeEditorFile = 'src/App.tsx';
+    let isPreviewMd = false;
+
+    function clickTreeFolder(id) {
+      document.getElementById(id).classList.toggle('hidden');
+    }
+
+    function selectEditorFile(filePath) {
+      activeEditorFile = filePath;
+      document.getElementById('active-editor-filename').innerText = filePath;
+      
+      const mdBtn = document.getElementById('editor-md-preview-btn');
+      const codeContainer = document.getElementById('editor-code-container');
+      const previewContainer = document.getElementById('editor-md-preview-container');
+
+      // Reset Markdown mode
+      isPreviewMd = false;
+      codeContainer.classList.remove('hidden');
+      previewContainer.classList.add('hidden');
+      mdBtn.innerText = "Preview MD";
+
+      if (filePath.endsWith('.md')) {
+        mdBtn.classList.remove('hidden');
+      } else {
+        mdBtn.classList.add('hidden');
+      }
+
+      let fileContent = "";
+      if (filePath === 'src/App.tsx') {
+        fileContent = originalAppCode;
+      } else if (filePath === 'src/components/Dashboard.tsx') {
+        fileContent = dashboardCode;
+      } else if (filePath === 'package.json') {
+        fileContent = packageCode;
+      } else if (filePath === 'README.md') {
+        fileContent = readmeCode;
+      } else {
+        fileContent = "// Simulated source code file";
+      }
+
+      // Populate elements
+      document.getElementById('editor-code-element').textContent = fileContent;
+    }
+
+    function toggleMarkdownPreview() {
+      const codeContainer = document.getElementById('editor-code-container');
+      const previewContainer = document.getElementById('editor-md-preview-container');
+      const mdBtn = document.getElementById('editor-md-preview-btn');
+
+      if (!isPreviewMd) {
+        isPreviewMd = true;
+        codeContainer.classList.add('hidden');
+        previewContainer.classList.remove('hidden');
+        mdBtn.innerText = "Edit Code";
+      } else {
+        isPreviewMd = false;
+        codeContainer.classList.remove('hidden');
+        previewContainer.classList.add('hidden');
+        mdBtn.innerText = "Preview MD";
+      }
+    }
+
+    // Chat simulation triggers
+    function runDashboardSimulation() {
+      setTimeout(() => {
+        addMessage("Evaluating request to create dashboard. Launching ReAct planner loop...", false);
+        switchTab('trajectory');
+        startTrajectorySimulation();
+      }, 500);
+    }
+
+    function startTrajectorySimulation() {
+      const container = document.getElementById('trajectory-timeline-container');
+      const emptyState = document.getElementById('trajectory-empty-state');
+      emptyState.classList.add('hidden');
+      container.innerHTML = '';
+
+      const steps = [
+        {
+          type: "thought",
+          text: "The user wants an admin dashboard. I need to create a new component `src/components/Dashboard.tsx` containing layout and KPI widgets, and then mount it inside `src/App.tsx`."
+        },
+        {
+          type: "tool",
+          name: "write_file",
+          args: { path: "src/components/Dashboard.tsx", content: "[React Dashboard code]" },
+          observation: "File src/components/Dashboard.tsx successfully written (480 bytes)."
+        },
+        {
+          type: "thought",
+          text: "Now I need to update `src/App.tsx` to import and render this new `Dashboard` component."
+        },
+        {
+          type: "tool",
+          name: "replace_in_file",
+          args: { path: "src/App.tsx", search: "Hello, Devy!", replace: "<Dashboard />" },
+          observation: "File src/App.tsx modifications applied successfully."
+        },
+        {
+          type: "thought",
+          text: "I must verify that the changes build cleanly by running `npm run build` or compilation tests."
+        },
+        {
+          type: "tool",
+          name: "run_command",
+          args: { command: "npm test" },
+          observation: "VITE compile check: success. 0 compilation errors."
+        }
+      ];
+
+      let delay = 0;
+      steps.forEach((step, index) => {
+        setTimeout(() => {
+          const div = document.createElement('div');
+          div.className = "animate-fade-in p-3.5 bg-white/5 border border-white/5 rounded-xl space-y-2 text-xs select-text";
+          
+          if (step.type === 'thought') {
+            div.innerHTML = `
+              <div class="flex items-center gap-2">
+                <span class="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
+                <span class="font-bold text-blue-400 font-space font-semibold">Agent Thought</span>
+              </div>
+              <p class="text-slate-300 leading-relaxed font-mono">${step.text}</p>
+            `;
+          } else {
+            div.innerHTML = `
+              <div class="flex items-center gap-2 text-emerald-400 font-semibold font-space">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                <span>Executing Tool: ${step.name}</span>
+              </div>
+              <div class="p-2 bg-black/40 rounded border border-white/5 font-mono text-[11px] text-slate-400">
+                <p class="font-semibold text-slate-300 font-space">Arguments:</p>
+                <pre class="overflow-x-auto">${JSON.stringify(step.args, null, 2)}</pre>
+              </div>
+              <div class="p-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded font-mono text-[11px]">
+                <span class="font-bold font-space">Observation:</span> ${step.observation}
+              </div>
+            `;
+          }
+
+          container.appendChild(div);
+          container.scrollTop = container.scrollHeight;
+
+          // Update stats dynamically
+          document.getElementById('trajectory-stats-steps').innerText = `${index + 1} / 30`;
+          document.getElementById('trajectory-stats-tokens').innerText = `${(index + 1) * 1230} tokens`;
+          document.getElementById('trajectory-stats-cost').innerText = `$${((index + 1) * 0.0018).toFixed(4)} USD`;
+
+          // Apply simulated file tree edits on tool writes
+          if (step.name === 'write_file') {
+            document.getElementById('simulated-dashboard-tree-item').classList.remove('hidden');
+          }
+
+          if (index === steps.length - 1) {
+            setTimeout(() => {
+              // Switch code editor App.tsx code to reflect imports and renders
+              originalAppCode = `import React from 'react';
+import { Dashboard } from './components/Dashboard';
+
+export function App() {
+  return (
+    <div className="app bg-slate-900 p-6 min-h-screen text-white">
+      <Dashboard />
+    </div>
+  );
+}`;
+              selectEditorFile('src/App.tsx');
+              
+              // Switch browser preview to show admin metrics
+              document.getElementById('browser-preview-welcome').classList.add('hidden');
+              document.getElementById('browser-preview-dashboard').classList.remove('hidden');
+
+              // Update checklist
+              document.getElementById('simulated-task-2').checked = true;
+              document.getElementById('simulated-task-2-text').className = "text-slate-500 line-through";
+              document.getElementById('simulated-task-3').checked = true;
+              document.getElementById('simulated-task-3-text').className = "text-slate-500 line-through";
+              document.getElementById('simulated-task-4').checked = true;
+              document.getElementById('simulated-task-4-text').className = "text-slate-500 line-through";
+
+              addMessage("Success! Dashboard component created, imported into App.tsx, verified type checks, and rendered in Browser Preview viewport.", false);
+            }, 1000);
+          }
+        }, delay);
+        delay += 1200;
+      });
+    }
+
+    // 2. Terminal autopilot healing simulation
+    function runHealerSimulation() {
+      setTimeout(() => {
+        addMessage("Detected compile traceback crash. Swapping to Autopilot Debugger Dashboard...", false);
+        switchTab('debugger');
+      }, 500);
+    }
+
+    function triggerSelfHealingSimulation() {
+      const console = document.getElementById('debugger-terminal-console');
+      console.innerHTML = `
+        <div class="text-slate-500 font-mono">> node test-suite.js</div>
+        <div class="text-slate-400 font-mono">Running compilation tests...</div>
+        <div class="text-rose-500 font-bold font-mono mt-2">Error: ReferenceError: count is not defined in src/App.tsx:L8</div>
+        <div class="text-rose-500 pl-4 font-mono">at App (src/App.tsx:8:15)</div>
+        <div class="text-yellow-400 mt-3 font-semibold font-space">[Autopilot] Crash detected. Initializing self-healing runner...</div>
+      `;
+
+      // Reset step visual status
+      document.getElementById('autopilot-step-2').innerHTML = `
+        <div class="w-4 h-4 rounded-full border border-slate-600 flex items-center justify-center shrink-0 text-[10px] text-slate-400 font-bold">2</div>
+        <div>
+          <p class="font-semibold text-slate-400 font-space">2. Code Correction</p>
+          <p class="text-slate-600 text-[10px] font-space">Apply code fixes to App.tsx.</p>
+        </div>
+      `;
+      document.getElementById('autopilot-step-3').innerHTML = `
+        <div class="w-4 h-4 rounded-full border border-slate-600 flex items-center justify-center shrink-0 text-[10px] text-slate-400 font-bold">3</div>
+        <div>
+          <p class="font-semibold text-slate-400 font-space">3. Process Rerun</p>
+          <p class="text-slate-600 text-[10px] font-space">Verify compilation output.</p>
+        </div>
+      `;
+
+      setTimeout(() => {
+        // Step 2 active
+        document.getElementById('autopilot-step-2').innerHTML = `
+          <div class="w-4 h-4 rounded-full bg-yellow-500 flex items-center justify-center shrink-0 text-[10px] text-black font-bold animate-pulse">2</div>
+          <div>
+            <p class="font-semibold text-yellow-400 font-space">2. Code Correction</p>
+            <p class="text-slate-300 text-[10px] font-space">Rewriting file App.tsx to define state counts...</p>
+          </div>
+        `;
+        const div = document.createElement('div');
+        div.className = "text-yellow-400 mt-2 font-mono";
+        div.innerText = "[Autopilot Coder Agent] Writing replacement patch: count parameter initialized inside App.tsx state bindings.";
+        console.appendChild(div);
+        console.scrollTop = console.scrollHeight;
+
+        setTimeout(() => {
+          // Step 2 done, Step 3 active
+          document.getElementById('autopilot-step-2').innerHTML = `
+            <div class="w-4 h-4 rounded-full bg-emerald-500 flex items-center justify-center shrink-0 text-[10px] text-black font-bold">✓</div>
+            <div>
+              <p class="font-semibold text-white font-space">2. Code Correction</p>
+              <p class="text-slate-500 text-[10px] font-space">Fixes applied successfully to App.tsx.</p>
+            </div>
+          `;
+
+          document.getElementById('autopilot-step-3').innerHTML = `
+            <div class="w-4 h-4 rounded-full bg-yellow-500 flex items-center justify-center shrink-0 text-[10px] text-black font-bold animate-pulse">3</div>
+            <div>
+              <p class="font-semibold text-yellow-400 font-space">3. Process Rerun</p>
+              <p class="text-slate-300 text-[10px] font-space">Rerunning compile checkers...</p>
+            </div>
+          `;
+
+          const div2 = document.createElement('div');
+          div2.className = "text-slate-500 mt-2 font-mono";
+          div2.innerText = "> node test-suite.js";
+          console.appendChild(div2);
+
+          const div3 = document.createElement('div');
+          div3.className = "text-slate-400 font-mono";
+          div3.innerText = "Running compilation tests...";
+          console.appendChild(div3);
+          console.scrollTop = console.scrollHeight;
+
+          setTimeout(() => {
+            // Step 3 done
+            document.getElementById('autopilot-step-3').innerHTML = `
+              <div class="w-4 h-4 rounded-full bg-emerald-500 flex items-center justify-center shrink-0 text-[10px] text-black font-bold">✓</div>
+              <div>
+                <p class="font-semibold text-white font-space">3. Process Rerun</p>
+                <p class="text-slate-500 text-[10px] font-space">Compilation tests passed successfully.</p>
+              </div>
+            `;
+
+            const div4 = document.createElement('div');
+            div4.className = "text-emerald-500 font-bold mt-1 font-mono";
+            div4.innerText = "✅ Success: All compilation checks passed. Exited with status 0.";
+            console.appendChild(div4);
+            console.scrollTop = console.scrollHeight;
+
+            addMessage("Self-Healing complete! Autopilot diagnosed ReferenceError: count is not defined, injected State Hooks to App.tsx, verified build compilers, and resolved the issue.", false);
+          }, 1200);
+        }, 1200);
+      }, 1200);
+    }
+  </script>
+</body>
+</html>

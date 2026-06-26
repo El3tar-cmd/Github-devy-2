@@ -612,19 +612,20 @@ export async function executeToolCall(
     case "index_codebase_rag":
       return await req("/api/rag/index", { clientApiKey: settings?.geminiApiKey });
     case "invoke_subagent": {
-      if (!settings) {
-        return { error: "Settings are required to invoke subagents." };
-      }
+      if (!settings) return { error: "Settings are required to invoke subagents." };
       if (!SUB_AGENT_TYPES.includes(args.agentType)) {
-        return { error: `Unknown agent type: ${args.agentType}` };
+        return { error: `Unknown agent type: "${args.agentType}". Valid types: ${SUB_AGENT_TYPES.join(", ")}` };
       }
       let orchestrator = (window as any).__agentOrchestrator;
       if (!orchestrator) {
         orchestrator = new AgentOrchestrator();
         (window as any).__agentOrchestrator = orchestrator;
       }
-      
+
       const shouldRunInBackground = args.background !== false;
+
+      // Capture the instance right after creation for reliable reference
+      let capturedInstance: any = null;
       const instancePromise = orchestrator.invokeSubAgent(
         args.agentType,
         args.task,
@@ -637,31 +638,38 @@ export async function executeToolCall(
         },
         args.maxIterations,
         args.timeoutSeconds,
-        args.agentName
+        args.agentName,
+        args.maxRetries  // pass through; orchestrator defaults to 2 if undefined
       );
-      
+
+      // Get the instance synchronously right after invocation
+      const allAgents = orchestrator.getAll();
+      capturedInstance = allAgents[allAgents.length - 1];
+
       if (shouldRunInBackground) {
-        const allAgents = orchestrator.getAll();
-        const latest = allAgents[allAgents.length - 1];
         return {
-          agentId: latest ? latest.id : "unknown",
-          agentName: latest?.displayName || args.agentName || null,
-          taskId: latest?.taskId || null,
+          agentId: capturedInstance?.id ?? "unknown",
+          agentName: capturedInstance?.displayName ?? args.agentName ?? null,
+          taskId: capturedInstance?.taskId ?? null,
           agentType: args.agentType,
-          status: latest?.status || "queued",
+          status: capturedInstance?.status ?? "queued",
+          maxRetries: args.maxRetries ?? 2,
           background: true,
-          message: "Sub-agent started as a tracked background task. Continue other work and check status using get_agent_task or list_agent_tasks."
+          message: `Sub-agent "${capturedInstance?.displayName}" queued. Auto-retries: up to ${args.maxRetries ?? 2} on failure. Poll with get_agent_task(taskId) or list_agent_tasks().`,
         };
       }
-      
+
       const instance = await instancePromise;
       return {
         agentId: instance.id,
+        agentName: instance.displayName,
         taskId: instance.taskId,
         agentType: args.agentType,
         status: instance.status,
         result: instance.result,
-        iterationsUsed: instance.messages.filter(m => m.role === 'assistant').length,
+        error: instance.lastError,
+        retriesUsed: (instance.runCount ?? 1) - 1,
+        iterationsUsed: instance.messages.filter((m: any) => m.role === 'assistant').length,
       };
     }
     case "invoke_parallel_subagents": {
@@ -683,9 +691,10 @@ export async function executeToolCall(
         name: a.agentName,
         task: a.task,
         maxIterations: a.maxIterations,
-        timeoutSeconds: a.timeoutSeconds
+        timeoutSeconds: a.timeoutSeconds,
+        maxRetries: a.maxRetries,  // each agent can have its own retry budget
       }));
-      
+
       const shouldRunInBackground = args.background !== false;
       const instancesPromise = orchestrator.invokeParallel(
         tasks,
@@ -697,7 +706,7 @@ export async function executeToolCall(
           if (onChunk) onChunk(JSON.stringify({ agentId, status }));
         }
       );
-      
+
       if (shouldRunInBackground) {
         const allAgents = orchestrator.getAll();
         const count = args.agents.length;
@@ -727,7 +736,7 @@ export async function executeToolCall(
         window.addEventListener("agent-task-completed", checkParallelDone);
         return {
           taskId: parallelTask.id,
-          agents: latest.map(inst => ({
+          agents: latest.map((inst: any) => ({
             agentId: inst.id,
             agentName: inst.displayName,
             taskId: inst.taskId,
@@ -735,7 +744,7 @@ export async function executeToolCall(
             status: inst.status,
           })),
           background: true,
-          message: "Parallel sub-agents started successfully in the background."
+          message: `${count} parallel sub-agents started. Each has auto-retry on failure. Poll with list_agent_tasks() or get_agent_task(taskId).`,
         };
       }
       

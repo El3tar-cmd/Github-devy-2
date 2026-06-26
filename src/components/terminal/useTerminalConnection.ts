@@ -21,6 +21,14 @@ export function useTerminalConnection(
     '=== Terminal Stream Logs ===\r\nType commands in the console assistant box or input directly on the terminal canvas.\r\nOutputs are fully synchronized with the host sandbox process in real-time.\r\n\r\n'
   );
 
+  // Reset terminal state when workspace changes
+  useEffect(() => {
+    setLogContent(`=== Terminal Stream Logs — Workspace: ${workspaceId} ===\r\nWorkspace switched. Terminal session isolated to this workspace.\r\n\r\n`);
+    setError(null);
+    setReconnectAttempts(0);
+    setConnectionStatus('connecting');
+  }, [workspaceId]);
+
   // Main Terminal & Multi-tunnel Connection Lifecycle
   useEffect(() => {
     if (!terminalRef.current) return;

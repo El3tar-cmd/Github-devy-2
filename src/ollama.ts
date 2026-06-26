@@ -3,7 +3,7 @@ import { AgentOrchestrator } from "./agent/orchestrator/AgentOrchestrator";
 import { TOOLS_SCHEMA } from "./agent/tools/toolsSchema";
 import { getAgentTaskManager } from "./agent/orchestrator/TaskManager";
 
-const SUB_AGENT_TYPES = ["researcher", "coder", "reviewer", "debugger", "planner"];
+const SUB_AGENT_TYPES = ["researcher", "coder", "reviewer", "debugger", "planner", "tester"];
 
 function shouldAutoContinueQuestion(question: string) {
   const normalized = String(question || "").toLowerCase();
@@ -172,6 +172,25 @@ export async function executeToolCall(
       return await req("/api/fs/write", args);
     case "replace_in_file":
       return await req("/api/fs/replace", args);
+    case "multi_file_edit": {
+      const edits: Array<{ path: string; search: string; replace: string }> = args.edits || [];
+      const results: Array<{ path: string; success: boolean; error?: string }> = [];
+      for (const edit of edits) {
+        try {
+          const result = await req("/api/fs/replace", { path: edit.path, search: edit.search, replace: edit.replace });
+          results.push({ path: edit.path, success: !result?.error, error: result?.error });
+        } catch (err: any) {
+          results.push({ path: edit.path, success: false, error: err.message });
+        }
+      }
+      const succeeded = results.filter(r => r.success).length;
+      const failed = results.filter(r => !r.success);
+      return {
+        summary: `${succeeded}/${edits.length} edits applied successfully`,
+        results,
+        ...(failed.length > 0 && { errors: failed }),
+      };
+    }
     case "create_directory":
       return await req("/api/fs/mkdir", args);
     case "rename_path":

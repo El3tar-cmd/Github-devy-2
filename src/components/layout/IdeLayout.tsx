@@ -19,10 +19,11 @@ import { PlannerPanel } from "../PlannerPanel";
 import { TrajectoryPanel } from "../TrajectoryPanel";
 import { DependencyGraphPanel } from "../DependencyGraphPanel";
 import { SandboxPanel } from "../SandboxPanel";
+import { SubAgentDashboard } from "../SubAgentDashboard";
 
 interface IdeLayoutProps {
-  ideTab: "editor" | "browser" | "terminal" | "search" | "git" | "db" | "debugger" | "package" | "builder" | "planner" | "trajectory" | "ast" | "sandbox";
-  setIdeTab: (tab: "editor" | "browser" | "terminal" | "search" | "git" | "db" | "debugger" | "package" | "builder" | "planner" | "trajectory" | "ast" | "sandbox") => void;
+  ideTab: "editor" | "browser" | "terminal" | "search" | "git" | "db" | "debugger" | "package" | "builder" | "planner" | "trajectory" | "ast" | "sandbox" | "agents";
+  setIdeTab: (tab: "editor" | "browser" | "terminal" | "search" | "git" | "db" | "debugger" | "package" | "builder" | "planner" | "trajectory" | "ast" | "sandbox" | "agents") => void;
   activeTab: "chat" | "ide";
 }
 
@@ -323,6 +324,16 @@ export const IdeLayout: React.FC<IdeLayoutProps> = ({
           >
             Sandbox
           </button>
+          <button
+            onClick={() => setIdeTab("agents")}
+            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+              ideTab === "agents"
+                ? "bg-[#2a2a32] text-orange-400 shadow-sm"
+                : "text-slate-400 hover:text-slate-200 hover:bg-white/5"
+            }`}
+          >
+            Agents
+          </button>
         </div>
         {ideTab === "editor" && (
           <div className="flex items-center gap-2 shrink-0">
@@ -540,6 +551,11 @@ export const IdeLayout: React.FC<IdeLayoutProps> = ({
         {/* Sandbox Tab */}
         <div className={`flex-1 flex overflow-hidden ${ideTab === "sandbox" ? "" : "hidden"}`}>
           {ideTab === "sandbox" && <SandboxPanel />}
+        </div>
+
+        {/* Sub-Agent Dashboard Tab */}
+        <div className={`flex-1 flex overflow-hidden ${ideTab === "agents" ? "" : "hidden"}`}>
+          {ideTab === "agents" && <SubAgentDashboard />}
         </div>
       </div>
     </div>

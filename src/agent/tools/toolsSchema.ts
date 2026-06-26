@@ -44,15 +44,42 @@ export const TOOLS_SCHEMA = [
     function: {
       name: "replace_in_file",
       description:
-        "Replace a specific string in a file with new content. Useful for targeted edits.",
+        "Replace a specific exact string in a file with new content. Use for targeted single-file edits. IMPORTANT: the 'search' string must match the file content character-for-character including all whitespace and indentation.",
       parameters: {
         type: "object",
         properties: {
-          path: { type: "string" },
-          search: { type: "string" },
-          replace: { type: "string" },
+          path: { type: "string", description: "Relative path to the file" },
+          search: { type: "string", description: "The exact string to find in the file (must be unique within the file)" },
+          replace: { type: "string", description: "The replacement string" },
         },
         required: ["path", "search", "replace"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "multi_file_edit",
+      description:
+        "Apply precise search-and-replace edits to multiple files in a single atomic operation. Use this instead of calling replace_in_file repeatedly when editing more than one file. Each edit targets one exact string in one file.",
+      parameters: {
+        type: "object",
+        properties: {
+          edits: {
+            type: "array",
+            description: "List of file edits to apply. Each edit is applied sequentially within each file.",
+            items: {
+              type: "object",
+              properties: {
+                path: { type: "string", description: "Relative file path" },
+                search: { type: "string", description: "Exact string to find (must match verbatim including whitespace)" },
+                replace: { type: "string", description: "Replacement string" },
+              },
+              required: ["path", "search", "replace"],
+            },
+          },
+        },
+        required: ["edits"],
       },
     },
   },

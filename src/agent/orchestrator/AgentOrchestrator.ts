@@ -21,8 +21,18 @@ type AgentRunOptions = {
   createTaskRecord?: boolean;
 };
 
-function makeAgentId() {
-  return `agent_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+function makeAgentId(label?: string): string {
+  const ts = Date.now().toString(36);
+  const rand = Math.random().toString(36).slice(2, 6);
+  if (label) {
+    const slug = label
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 24);
+    return `${slug}-${rand}`;
+  }
+  return `agent-${ts}-${rand}`;
 }
 
 function normalizeAgentName(name: string) {
@@ -99,7 +109,7 @@ export class AgentOrchestrator {
     };
 
     const instance: SubAgentInstance = {
-      id: makeAgentId(),
+      id: makeAgentId(normalizedName),
       typeName,
       displayName: normalizedName,
       definition,

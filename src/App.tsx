@@ -29,7 +29,7 @@ function MainApp() {
 
   const [activeTab, setActiveTab] = useState<"chat" | "ide">("chat");
   const [ideTab, setIdeTab] = useState<
-    "editor" | "browser" | "terminal" | "search" | "git" | "db" | "debugger" | "package" | "builder" | "planner" | "trajectory" | "ast" | "sandbox"
+    "editor" | "browser" | "terminal" | "search" | "git" | "db" | "debugger" | "package" | "builder" | "planner" | "trajectory" | "ast" | "sandbox" | "agents"
   >("editor");
 
   const [askHumanQuestion, setAskHumanQuestion] = useState<string | null>(null);

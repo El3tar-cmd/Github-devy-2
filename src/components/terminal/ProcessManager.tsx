@@ -15,6 +15,8 @@ import {
   ClipboardList,
   SlidersHorizontal,
   Eye,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
 import { AgentTask, getAgentTaskManager } from '../../agent/orchestrator/TaskManager';
 import { ChatMessage } from '../../types';
@@ -63,6 +65,11 @@ export function ProcessManager({ show, onClose, workspaceId, activeTabId, onTerm
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [selectedAgentPanel, setSelectedAgentPanel] = useState<'live' | 'settings'>('live');
   const [fetchingProcesses, setFetchingProcesses] = useState(false);
+  
+  // Expand/collapse states for cards
+  const [expandedTerminals, setExpandedTerminals] = useState<Record<string, boolean>>({});
+  const [expandedBackgrounds, setExpandedBackgrounds] = useState<Record<number, boolean>>({});
+  const [expandedAgentTasks, setExpandedAgentTasks] = useState<Record<string, boolean>>({});
 
   const agentVisuals = {
     researcher: { Icon: Search, color: 'text-cyan-300', bg: 'bg-cyan-500/10', border: 'border-cyan-500/30', shape: 'rounded-full' },
@@ -571,30 +578,55 @@ export function ProcessManager({ show, onClose, workspaceId, activeTabId, onTerm
                     الطرفيات النشطة (Interactive Shells)
                   </h4>
                   <div className="space-y-2">
-                    {activeProcesses.terminals.map((term) => (
-                      <div
-                        key={term.id}
-                        className="flex items-center justify-between p-3 rounded-xl bg-[#0f0f13] border border-white/5 hover:border-white/10 transition-all animate-in fade-in duration-200"
-                      >
-                        <div className="flex flex-col gap-1">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-semibold text-white font-mono">Bash #{term.tabId}</span>
-                            <span className="text-[10px] text-slate-500 bg-white/5 px-1.5 py-0.5 rounded font-mono">PID: {term.pid}</span>
-                          </div>
-                          <span className="text-[10px] text-slate-400 truncate max-w-[280px]">
-                            Workspace: {term.workspaceId}
-                          </span>
-                        </div>
-                        <button
-                          onClick={() => killProcess('terminal', term.id)}
-                          className="px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500 hover:text-black text-rose-400 text-xs font-semibold rounded-lg transition-all border border-rose-500/10 inline-flex items-center gap-1 cursor-pointer"
-                          title="إنهاء جلسة الطرفية هذه بالكامل"
+                    {activeProcesses.terminals.map((term) => {
+                      const isExpanded = expandedTerminals[term.id] !== false;
+                      return (
+                        <div
+                          key={term.id}
+                          className="rounded-xl bg-[#0f0f13] border border-white/5 hover:border-white/10 transition-all animate-in fade-in duration-200 overflow-hidden"
                         >
-                          <X className="w-3.5 h-3.5" />
-                          إنهاء (Kill)
-                        </button>
-                      </div>
-                    ))}
+                          {/* Header - always visible */}
+                          <button
+                            onClick={() => setExpandedTerminals(prev => ({ ...prev, [term.id]: !prev[term.id] }))}
+                            className="w-full flex items-center justify-between p-3 text-left hover:bg-white/[0.02] transition-colors"
+                          >
+                            <div className="flex flex-col gap-1">
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-semibold text-white font-mono">Bash #{term.tabId}</span>
+                                <span className="text-[10px] text-slate-500 bg-white/5 px-1.5 py-0.5 rounded font-mono">PID: {term.pid}</span>
+                              </div>
+                              <span className="text-[10px] text-slate-400 truncate max-w-[280px]">
+                                Workspace: {term.workspaceId}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {isExpanded ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
+                            </div>
+                          </button>
+                          
+                          {/* Expanded content */}
+                          {isExpanded && (
+                            <div className="px-3 pb-3 pt-0 border-t border-white/5">
+                              <div className="flex items-center justify-between mt-3">
+                                <div className="text-[10px] text-slate-500 font-mono">
+                                  <div>Workspace ID: {term.workspaceId}</div>
+                                  <div>Tab ID: {term.tabId}</div>
+                                  <div>Process ID: {term.pid}</div>
+                                </div>
+                                <button
+                                  onClick={() => killProcess('terminal', term.id)}
+                                  className="px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500 hover:text-black text-rose-400 text-xs font-semibold rounded-lg transition-all border border-rose-500/10 inline-flex items-center gap-1 cursor-pointer"
+                                  title="إنهاء جلسة الطرفية هذه بالكامل"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                  إنهاء (Kill)
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -607,29 +639,56 @@ export function ProcessManager({ show, onClose, workspaceId, activeTabId, onTerm
                     عمليات الخلفية (Agent background tasks)
                   </h4>
                   <div className="space-y-2">
-                    {activeProcesses.backgrounds.map((bg) => (
-                      <div
-                        key={bg.id}
-                        className="flex items-center justify-between p-3 rounded-xl bg-[#0f0f13] border border-white/5 hover:border-white/10 transition-all animate-in fade-in duration-200"
-                      >
-                        <div className="flex flex-col gap-1 flex-1 min-w-0 mr-3">
-                          <div className="flex items-center gap-2">
-                            <span className="text-[10px] text-slate-500 bg-white/5 px-1.5 py-0.5 rounded font-mono">PID: {bg.pid}</span>
-                          </div>
-                          <span className="text-xs text-white font-mono truncate block" title={bg.command}>
-                            {bg.command}
-                          </span>
-                        </div>
-                        <button
-                          onClick={() => killProcess('background', bg.id)}
-                          className="px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500 hover:text-black text-rose-400 text-xs font-semibold rounded-lg transition-all border border-rose-500/10 inline-flex items-center gap-1 shrink-0 cursor-pointer"
-                          title="إنهاء هذه العملية الجارية في الخلفية فوراً"
+                    {activeProcesses.backgrounds.map((bg) => {
+                      const isExpanded = expandedBackgrounds[bg.id] !== false;
+                      return (
+                        <div
+                          key={bg.id}
+                          className="rounded-xl bg-[#0f0f13] border border-white/5 hover:border-white/10 transition-all animate-in fade-in duration-200 overflow-hidden"
                         >
-                          <X className="w-3.5 h-3.5" />
-                          إنهاء (Kill)
-                        </button>
-                      </div>
-                    ))}
+                          {/* Header - always visible */}
+                          <button
+                            onClick={() => setExpandedBackgrounds(prev => ({ ...prev, [bg.id]: !prev[bg.id] }))}
+                            className="w-full flex items-center justify-between p-3 text-left hover:bg-white/[0.02] transition-colors"
+                          >
+                            <div className="flex flex-col gap-1 flex-1 min-w-0 mr-3">
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] text-slate-500 bg-white/5 px-1.5 py-0.5 rounded font-mono">PID: {bg.pid}</span>
+                              </div>
+                              <span className="text-xs text-white font-mono truncate block" title={bg.command}>
+                                {bg.command}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {isExpanded ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
+                            </div>
+                          </button>
+                          
+                          {/* Expanded content */}
+                          {isExpanded && (
+                            <div className="px-3 pb-3 pt-0 border-t border-white/5">
+                              <div className="flex items-center justify-between mt-3">
+                                <div className="flex-1 min-w-0">
+                                  <div className="text-[10px] text-slate-500 font-mono mb-1">Full Command:</div>
+                                  <pre className="text-[11px] text-slate-300 font-mono bg-black/20 rounded-lg p-2 overflow-x-auto whitespace-pre-wrap break-all">
+                                    {bg.command}
+                                  </pre>
+                                  <div className="text-[10px] text-slate-500 font-mono mt-2">Process ID: {bg.pid}</div>
+                                </div>
+                                <button
+                                  onClick={() => killProcess('background', bg.id)}
+                                  className="px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500 hover:text-black text-rose-400 text-xs font-semibold rounded-lg transition-all border border-rose-500/10 inline-flex items-center gap-1 shrink-0 cursor-pointer ml-3"
+                                  title="إنهاء هذه العملية الجارية في الخلفية فوراً"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                  إنهاء (Kill)
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -647,13 +706,18 @@ export function ProcessManager({ show, onClose, workspaceId, activeTabId, onTerm
                       const pid = task.metadata?.pid;
                       const logs = typeof task.result?.logs === 'string' ? task.result.logs : '';
                       const canCancel = task.status === 'running' || task.status === 'queued' || Boolean(pid);
+                      const isExpanded = expandedAgentTasks[task.id] !== false;
 
                       return (
                         <div
                           key={task.id}
-                          className="p-3 rounded-xl bg-[#0f0f13] border border-white/5 hover:border-white/10 transition-all animate-in fade-in duration-200 space-y-2"
+                          className="rounded-xl bg-[#0f0f13] border border-white/5 hover:border-white/10 transition-all animate-in fade-in duration-200 overflow-hidden"
                         >
-                          <div className="flex items-start justify-between gap-3">
+                          {/* Header - always visible */}
+                          <button
+                            onClick={() => setExpandedAgentTasks(prev => ({ ...prev, [task.id]: !prev[task.id] }))}
+                            className="w-full flex items-start justify-between gap-3 p-3 text-left hover:bg-white/[0.02] transition-colors"
+                          >
                             <div className="flex flex-col gap-1 flex-1 min-w-0">
                               <div className="flex items-center gap-2 flex-wrap">
                                 <span className="text-[10px] text-slate-500 bg-white/5 px-1.5 py-0.5 rounded font-mono">
@@ -681,20 +745,48 @@ export function ProcessManager({ show, onClose, workspaceId, activeTabId, onTerm
                                 {task.progress || task.id}
                               </span>
                             </div>
-                            <button
-                              onClick={() => cancelAgentTask(task)}
-                              disabled={!canCancel}
-                              className="px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500 hover:text-black disabled:opacity-40 disabled:hover:bg-rose-500/10 disabled:hover:text-rose-400 text-rose-400 text-xs font-semibold rounded-lg transition-all border border-rose-500/10 inline-flex items-center gap-1 shrink-0 cursor-pointer disabled:cursor-not-allowed"
-                              title="إلغاء مهمة الوكيل الخلفية"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                              إلغاء
-                            </button>
-                          </div>
-                          {logs && (
-                            <pre className="max-h-28 overflow-auto whitespace-pre-wrap rounded-lg bg-black/30 border border-white/5 p-2 text-[10px] text-slate-300 font-mono leading-relaxed">
-                              {logs.slice(-3000)}
-                            </pre>
+                            <div className="flex items-center gap-2 shrink-0">
+                              {isExpanded ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
+                            </div>
+                          </button>
+                          
+                          {/* Expanded content */}
+                          {isExpanded && (
+                            <div className="px-3 pb-3 pt-0 border-t border-white/5 space-y-3">
+                              <div className="flex items-start justify-between gap-3 mt-3">
+                                <div className="flex-1 min-w-0 space-y-2">
+                                  {command && (
+                                    <div>
+                                      <div className="text-[10px] text-slate-500 font-mono mb-1">Command:</div>
+                                      <pre className="text-[11px] text-slate-300 font-mono bg-black/20 rounded-lg p-2 overflow-x-auto whitespace-pre-wrap break-all">
+                                        {command}
+                                      </pre>
+                                    </div>
+                                  )}
+                                  {pid && (
+                                    <div className="text-[10px] text-slate-500 font-mono">Process ID: {pid}</div>
+                                  )}
+                                  <div className="text-[10px] text-slate-500 font-mono">Task ID: {task.id}</div>
+                                </div>
+                                <button
+                                  onClick={() => cancelAgentTask(task)}
+                                  disabled={!canCancel}
+                                  className="px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500 hover:text-black disabled:opacity-40 disabled:hover:bg-rose-500/10 disabled:hover:text-rose-400 text-rose-400 text-xs font-semibold rounded-lg transition-all border border-rose-500/10 inline-flex items-center gap-1 shrink-0 cursor-pointer disabled:cursor-not-allowed"
+                                  title="إلغاء مهمة الوكيل الخلفية"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                  إلغاء
+                                </button>
+                              </div>
+                              {logs && (
+                                <div>
+                                  <div className="text-[10px] text-slate-500 font-mono mb-1">Output Logs:</div>
+                                  <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-lg bg-black/30 border border-white/5 p-2 text-[10px] text-slate-300 font-mono leading-relaxed">
+                                    {logs.slice(-3000)}
+                                  </pre>
+                                </div>
+                              )}
+                            </div>
                           )}
                         </div>
                       );
